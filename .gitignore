@@ -17,3 +17,11 @@ dist/
 var/
 # Settings of one deployment (host names, SSH target): see deploy/site.env.example.
 deploy/site.env
+# Terraform: state, plans, providers and real variable files stay local.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+crash.log

@@ -41,6 +41,9 @@ Sections marked **planned** describe controls that are designed but not built ye
 | The service is compromised | systemd sandbox: own user, network to loopback only, read-only system, no access to WordPress files, TLS keys, the database or home directories, no capabilities, syscall filter, 256 MB memory cap; it never decodes an image | `deploy/systemd/wpmcp.service` |
 | The image worker is compromised (through a decoder bug) | One fresh process per image under a throwaway user, no credentials, no access to wpmcp's files, WordPress or its database, no loopback or private network, killed after 120 s; what it returns is only bytes the service uploads as an image | `deploy/systemd/wpmcp-media@.service` |
 | Secrets in configuration files or backups | Signing key and Application Password are systemd credentials in `/etc/wpmcp` (root:wpmcp 640), outside WordPress and its backups | `deploy/` |
+| Lightsail's own image derives the site address from the request's `Host` header, over http (poisoned links in e-mails, mixed content) | `bin/bootstrap-site` fixes `WP_HOME`/`WP_SITEURL` to `https://WP_HOST` | `deploy/bootstrap-site.sh` |
+| PHP rewrites the web server's configuration through `.htaccess` (the web root is writable by the web server on that image) | `.htaccess` stays disabled; the permalink rules are in Apache's own configuration, root-owned | `deploy/bootstrap-site.sh` |
+| SSH open to the internet on a new server | The Terraform firewall opens 22 only to the ranges given (`ssh_cidrs`); 80 and 443 are the only other open ports | `infra/instance/main.tf` |
 
 ## Kill switches
 
@@ -84,6 +87,10 @@ Sections marked **planned** describe controls that are designed but not built ye
 - **Requests without a host name** (no `Host` header or no SNI, e.g. old scanners) reach
   the MCP vhost, because it must sort before WordPress's catch-all vhost. They get the
   same 401/404 answers as anyone else.
+- **On Lightsail's own image, the initial WordPress admin password is also the database
+  password**, kept in `/opt/aws/wordpress/credentials.log`, which `wp-config.php` reads
+  and the web server can therefore read too. Change the admin password after
+  `bin/bootstrap-site`; the database password stays readable by PHP, as on any WordPress.
 - **The owner's TOTP secret and password hash live in the SQLite file.** Protect the file
   like a credential (mode 600, service user only) and keep it out of web-readable backups.
 

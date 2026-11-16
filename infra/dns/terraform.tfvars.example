@@ -1,0 +1,5 @@
+# Copy to terraform.tfvars (git-ignored) or pass -var-file=/path/to/dns.tfvars.
+aws_profile = "dns-account"
+zone_name   = "example.org"
+hosts       = ["example.org", "mcp.example.org"]
+# ipv4/ipv6 default to the outputs of ../instance (local state).

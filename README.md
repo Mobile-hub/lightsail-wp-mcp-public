@@ -50,9 +50,9 @@ deletes, files, WP-CLI, SQL or arbitrary URLs.
 
 ## Requirements
 
-- **Server:** the Bitnami WordPress image (Debian 12, Apache, systemd, Python 3.11), as on
-  AWS Lightsail. `deploy/` assumes Bitnami's paths (`/opt/bitnami`) and its Let's Encrypt
-  client; other layouts need those files adapted.
+- **Server:** an AWS Lightsail WordPress instance, either Lightsail's own image
+  (`wordpress_ls_1_0`: Debian 12, Apache 2, MariaDB) or the Bitnami one. `infra/` creates a
+  new one with Terraform. Other layouts need `deploy/platform.sh` extended.
 - **WordPress:** tested on 7.1 with **Polylang** 3.9 (free, required) and **All in One
   SEO** 5.0 (SEO fields are absent without it).
 - **A host name for the service** (for example `mcp.example.org`) pointing at the server.
@@ -75,6 +75,17 @@ token` mints a short-lived read-only access token for smoke tests.
 
 ## Deploy
 
+A new server, from nothing ([`infra/README.md`](infra/README.md)):
+
+```bash
+terraform -chdir=infra/instance apply -var-file=$HOME/my-site/instance.tfvars
+terraform -chdir=infra/dns apply -var-file=$HOME/my-site/dns.tfvars   # optional: Route 53 records
+SITE_ENV=$HOME/my-site/site.env bin/bootstrap-site                     # fresh Lightsail image only
+SITE_ENV=$HOME/my-site/site.env bin/deploy
+```
+
+An existing server:
+
 ```bash
 cp deploy/site.env.example deploy/site.env   # SSH target, MCP_HOST, WP_HOST, SITE_NAME
 bin/deploy
@@ -96,7 +107,8 @@ Site-specific read-only fields (for example the meta of your own plugin) can be 
 - `src/wpmcp/wp/` — the client for the bridge routes
 - `src/wpmcp/media/` — image checks and re-encoding, ChatGPT downloads, the image worker, upload links
 - `wordpress/mu-plugins/` — the bridge plugin (access rules, `wpmcp/v1` routes)
-- `deploy/`, `bin/deploy` — systemd units, Apache vhosts, server install script
+- `infra/` — Terraform: Lightsail instance, optional Route 53 records
+- `deploy/`, `bin/deploy`, `bin/bootstrap-site` — systemd units, Apache vhosts, server install and site bootstrap
 - `dev/`, `bin/dev` — the local WordPress stack for integration tests
 - `docs/` — architecture, security model, operations, clients
 - `memory-bank/` — current state and working notes of the project

@@ -4,6 +4,20 @@ All notable changes are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break things).
 
+## [0.4.0] - 2026-11-16
+
+### Added
+- `infra/`: Terraform for a Lightsail WordPress instance (static IPv4, IPv6, firewall with
+  SSH limited to given ranges, optional daily snapshots) and an optional, separate stack
+  for Route 53 records in any account.
+- Support for Lightsail's own WordPress image (`wordpress_ls_1_0`, Debian 12) next to the
+  Bitnami one: `deploy/platform.sh` detects the image; certificates come from certbot.
+- `bin/bootstrap-site`: prepares a fresh Lightsail image (fixed `https://` site address
+  instead of one derived from the Host header, Let's Encrypt certificate, permalink rules
+  in Apache's configuration, Polylang, All in One SEO, languages).
+- `DEPLOY_KNOWN_HOSTS`, `ACME_EMAIL` and `SITE_LANGUAGES` in the site file.
+- CI: `terraform fmt` and `validate`; shellcheck and PHP lint cover `deploy/`.
+
 ## [0.3.0] - 2026-11-16
 
 ### Changed

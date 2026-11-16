@@ -15,6 +15,9 @@
 - 2026-11-16 — 0.3.0: generic names, extra-fields filter, site file for deploys, licence,
   SECURITY/CONTRIBUTING/CHANGELOG, CI and Dependabot.
 
+- 2026-11-16 — 0.4.0: `infra/` Terraform, Lightsail's own image, `bin/bootstrap-site`;
+  tested end to end on a throwaway instance and destroyed.
+
 ## Not done
 - Connecting Claude.
 - Phases 5 and 6.

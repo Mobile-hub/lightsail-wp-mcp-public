@@ -42,3 +42,19 @@
   a drop-in so the image worker may reach that one private address.
 - After a long-running session the dev container's bind mount of `wordpress/mu-plugins`
   showed an empty directory; `podman restart wpmcp-dev_wordpress_1` fixed it.
+
+## Lightsail's own WordPress image (wordpress_ls_1_0, checked 2026-11-16)
+- Debian 12, systemd 252, Python 3.11 without `python3-venv` (the installer adds it),
+  Apache 2 with mod_php (prefork, `www-data`), MariaDB, WP-CLI in `/usr/local/bin`,
+  WordPress 7.1.4 in `/var/www/html` with `wp-config.php` one level up. Login user `admin`.
+- No Let's Encrypt client (443 serves the snakeoil certificate); certbot from Debian works
+  with `--webroot` (the default port-80 vhost lets ACME challenges through).
+- `WP_HOME`/`WP_SITEURL` come from `$_SERVER['HTTP_HOST']` over http; `AllowOverride None`
+  and no `.htaccess`, so pretty permalinks and `/wp-json/` give 404 until rules are added.
+- `wp-config.php` reads the database password with `tail -n 1` from
+  `/opt/aws/wordpress/credentials.log` (admin:www-data 440); the same value is the initial
+  admin password. Do not tighten that file's mode: the site loses its database.
+- Polylang is not preinstalled; All in One SEO and Jetpack are (Jetpack active). Polylang's
+  language list is in `src/settings/languages.php` in current versions.
+- `systemctl reload apache2` returns before the new configuration serves; wait before
+  probing.

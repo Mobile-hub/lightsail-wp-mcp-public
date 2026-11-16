@@ -1,14 +1,22 @@
 # Operations
 
 The service runs on the WordPress instance itself, at `https://<MCP_HOST>` (the host name
-set in the site file, see below). Paths assume the Bitnami WordPress image.
+set in the site file, see below). Two images are supported, detected by the installer
+(`deploy/platform.sh`): Lightsail's own WordPress image (`wordpress_ls_1_0`, Debian 12)
+and the Bitnami one. A new server can be created with the Terraform in `infra/`.
 
-## Before the first deploy
+## A new server
+
+`infra/README.md`: Terraform for the instance and, optionally, the DNS records; then
+`bin/bootstrap-site` (Lightsail's own image only) gives the fresh site its address,
+certificate, permalinks, Polylang and languages, and `bin/deploy` installs wpmcp.
+
+## An existing server
 
 `bin/inventory` prints a read-only report of the server (versions, Apache modules, PHP
 limits, table charsets, plugins, REST namespaces, file modes, a kses audit). Keep its
-output outside the repository. Things worth checking on a Bitnami WordPress host before
-an assistant gets write access:
+output outside the repository. Things worth checking before an assistant gets write
+access:
 
 - **Snapshots.** Take one before each deploy that changes the bridge; turn on automatic
   snapshots if the host offers them.
@@ -38,11 +46,12 @@ an assistant gets write access:
 | `/etc/wpmcp/wp-app-password` | Application Password of the `wpmcp` WordPress user (root:wpmcp 640) |
 | `/etc/wpmcp/cidrs.txt` | Client egress ranges (`bin/cidrs-update`), re-read on change |
 | `/var/lib/wpmcp/wpmcp.sqlite` | Owner, clients, connections (wpmcp 600) |
-| `/run/wpmcp/wpmcp.sock` | The service's only listener (directory wpmcp:daemon 710, from `/etc/tmpfiles.d/wpmcp.conf`) |
+| `/run/wpmcp/wpmcp.sock` | The service's only listener (directory 710, owner wpmcp, group of Apache: `daemon` on Bitnami, `www-data` on Debian; from `/etc/tmpfiles.d/wpmcp.conf`) |
 | `/etc/systemd/system/wpmcp.service` | Sandboxed unit: network to loopback only, no access to WordPress files, keys or the database |
 | `/etc/systemd/system/wpmcp-media.socket`, `wpmcp-media@.service` | Image worker: `/run/wpmcp-media.sock` (root:wpmcp 660), one sandboxed process per image, public network only; `wpmcp-media@.service.d/dns.conf` allows the DNS resolver |
-| `/opt/bitnami/apache/conf/vhosts/mcp-vhost.conf`, `mcp-https-vhost.conf` | Apache: ACME + redirect on 80, TLS + proxy to the socket on 443 |
-| `/opt/bitnami/letsencrypt/certificates/<MCP_HOST>.*` | Its own certificate; renewed by `/etc/cron.d/wpmcp-cert` |
+| Bitnami: `/opt/bitnami/apache/conf/vhosts/mcp-vhost.conf`, `mcp-https-vhost.conf`; Debian: `/etc/apache2/sites-available/wpmcp.conf`, `wpmcp-ssl.conf` | Apache: ACME + redirect on 80, TLS + proxy to the socket on 443 |
+| Bitnami: `/opt/bitnami/letsencrypt/certificates/<MCP_HOST>.*` (lego, `/etc/cron.d/wpmcp-cert`); Debian: `/etc/letsencrypt/live/<MCP_HOST>/` (certbot, its systemd timer) | The service's own certificate and its renewal |
+| Debian, from `bin/bootstrap-site`: `/etc/letsencrypt/live/<WP_HOST>/`, `default-ssl.conf`, `conf-available/wordpress-permalinks.conf` | The site's certificate, its HTTPS vhost, permalink rules |
 | `wp-content/mu-plugins/wpmcp-bridge*` | The bridge plugin, root-owned so PHP cannot modify it |
 | `wp-content/mu-plugins/*.php` from `EXTRA_MU_PLUGINS` | Optional site-specific mu-plugins, also root-owned |
 
@@ -90,7 +99,7 @@ journalctl -u wpmcp -f                     # service log and audit lines (wpmcp.
 journalctl -u wpmcp | grep '"wp_write"'     # every change: tool, object id, client, connection
 journalctl -u 'wpmcp-media@*'              # image worker errors
 journalctl -u wpmcp | grep '"deny_ip"'      # requests from outside the client ranges (monitor mode)
-sudo tail -f /opt/bitnami/apache/logs/mcp-access_log
+sudo tail -f /opt/bitnami/apache/logs/mcp-access_log   # Debian: /var/log/apache2/mcp-access.log
 ```
 
 Full stop: `sudo systemctl disable --now wpmcp` (Apache then answers 503 on the
