@@ -16,7 +16,10 @@ Terraform in `infra/`, whose `platform` output is the value for the site file.
    security updates, a patched PHP (it refuses one without the October 2026 fixes), the
    site address fixed to `https://WP_HOST`, the site's vhosts, its certificate (`WP_HOST`
    and `WP_ALIASES`) and permalink rules. On `bitnami` it checks and hardens the PHP that
-   serves the site; the certificate stays with Bitnami's `bncert-tool`.
+   serves the site; the certificate stays with Bitnami's `bncert-tool`, which must have
+   run once for the site (it installs the `lego` client and ACME webroot that wpmcp's own
+   certificate uses). Fresh Bitnami images ship a PHP without the October 2026 fixes
+   (8.4.20 in November 2026): follow AWS's PHP update guide first.
 2. `bin/bootstrap-site`, for a fresh site only: Polylang, the languages of
    `SITE_LANGUAGES`, All in One SEO, permalinks.
 3. `bin/deploy` installs wpmcp.

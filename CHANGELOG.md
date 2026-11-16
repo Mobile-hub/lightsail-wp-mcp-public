@@ -22,6 +22,9 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 - Grant IDs never start with `-`, which `wpmcp-admin grant revoke` read as an option.
+- Bitnami: python3-venv is installed when missing (fresh images lack it), and a server
+  where bncert-tool never ran (no lego, no ACME webroot) gets a clear error instead of a
+  failed certificate request.
 
 ### Changed
 - **Breaking:** the site file must say `PLATFORM=debian` or `PLATFORM=bitnami`; nothing

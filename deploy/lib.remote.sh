@@ -18,6 +18,22 @@ done
 
 step() { printf '\n== %s\n' "$*"; }
 
+# Both images are Debian 12: system packages come from apt on either.
+apt_install() {
+  local missing=() pkg
+  for pkg in "$@"; do dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'ok installed' || missing+=("$pkg"); done
+  ((${#missing[@]})) || return 0
+  DEBIAN_FRONTEND=noninteractive apt-get -qq update
+  DEBIAN_FRONTEND=noninteractive apt-get -qq install -y --no-install-recommends "${missing[@]}" >/dev/null
+}
+
+# The system Python (3.11 on Debian 12) with venv, which Debian packages separately.
+ensure_venv() {
+  apt_install python3-venv
+  python3 -c 'import ensurepip, sys; assert sys.version_info >= (3, 11)' ||
+    { echo "python3 >= 3.11 with venv is required" >&2; exit 1; }
+}
+
 # apache_apply <source> <dest>: install, enable, check, reload; undo on failure.
 apache_apply() {
   local src="$1" dest="$2" backup="" link

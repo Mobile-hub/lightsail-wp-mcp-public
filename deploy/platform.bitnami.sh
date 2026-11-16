@@ -28,11 +28,13 @@ apache_reload() { "${HTTPD[@]}" -k graceful; }
 apache_link() { echo "$1"; }                     # every file in vhosts/ is loaded
 apache_enable() { :; }
 apache_disable() { :; }
-apache_prepare() { :; }                          # modules and ACME webroot come with the image
-
-ensure_venv() {
-  python3 -c 'import ensurepip, sys; assert sys.version_info >= (3, 11)' 2>/dev/null ||
-    { echo "python3 >= 3.11 with venv is required" >&2; exit 1; }
+# Bitnami's bncert-tool, run once for the site, installs lego and the ACME webroot that the
+# MCP vhost includes; a fresh image has neither.
+apache_prepare() {
+  [[ -x "$LE/lego" && -f "$ACME_WEBROOT/conf/httpd-prefix.conf" ]] || {
+    echo "no lego or ACME webroot: run Bitnami's bncert-tool for the site first (sudo /opt/bitnami/bncert-tool)" >&2
+    exit 1
+  }
 }
 
 # The certificate of MCP_HOST, from lego (Bitnami's ACME client) with this server's existing

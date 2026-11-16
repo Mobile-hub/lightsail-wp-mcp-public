@@ -31,16 +31,6 @@ apache_prepare() {
   install -d -m 0755 -o root -g root "$ACME_WEBROOT"
 }
 
-apt_install() {
-  local missing=() pkg
-  for pkg in "$@"; do dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'ok installed' || missing+=("$pkg"); done
-  ((${#missing[@]})) || return 0
-  DEBIAN_FRONTEND=noninteractive apt-get -qq update
-  DEBIAN_FRONTEND=noninteractive apt-get -qq install -y --no-install-recommends "${missing[@]}" >/dev/null
-}
-
-ensure_venv() { apt_install python3-venv; }       # Debian splits ensurepip into python3-venv
-
 # certbot_issue <webroot> <host> [alias...]: one certificate for the names, renewed by
 # certbot.timer, which reloads Apache through the deploy hook.
 certbot_issue() {
