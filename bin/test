@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Lint + tests (creates .venv on first run).
+#   bin/test [pytest args]
+source "$(dirname "$0")/lib.sh"
+[[ -x "$ROOT/.venv/bin/pytest" ]] || run_uv sync --quiet --locked --extra dev
+"$ROOT/.venv/bin/ruff" check src tests
+"$ROOT/.venv/bin/ruff" format --check src tests
+"$ROOT/.venv/bin/pytest" --cov --cov-report=term-missing:skip-covered "$@"
+if have shellcheck; then shellcheck -x "$ROOT"/bin/* && ok "shellcheck"
+else warn "shellcheck not installed, skipping shell lint"; fi

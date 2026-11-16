@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Run the wpmcp CLI against the local .env:  bin/wpmcp serve | owner set | client add ...
+source "$(dirname "$0")/lib.sh"
+[[ -x "$ROOT/.venv/bin/wpmcp" ]] || die "run bin/setup first"
+wpmcp "$@"

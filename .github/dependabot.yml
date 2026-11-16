@@ -1,0 +1,16 @@
+# Keeps the pinned sets fresh: uv.lock (and, through make lock, deploy/requirements.txt)
+# and the SHA-pinned actions. Each update still goes through CI.
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    ignore:
+      # The 1.x line is the one verified against ChatGPT and Claude (docs/architecture.md).
+      - dependency-name: "mcp"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

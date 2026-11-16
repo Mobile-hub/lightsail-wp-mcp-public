@@ -1,0 +1,59 @@
+# Local WordPress for integration tests. Loopback only, throwaway data, no real secrets:
+# the passwords below protect nothing and exist only inside this stack.
+name: wpmcp-dev
+
+services:
+  db:
+    image: docker.io/library/mariadb:11
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: dev-only-password
+      MARIADB_RANDOM_ROOT_PASSWORD: "1"
+    volumes:
+      - db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  wordpress:
+    image: docker.io/library/wordpress:php8.2-apache
+    depends_on:
+      - db
+    environment: &wp-env
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: dev-only-password
+      # Application Passwords need HTTPS unless the environment is declared local.
+      # The bridge accepts them only from "this machine": under rootless podman, requests
+      # published on the host port arrive from the container's own address. With docker,
+      # set WPMCP_BRIDGE_ALLOWED_IPS to the bridge gateway (usually 172.x.0.1).
+      WORDPRESS_CONFIG_EXTRA: |
+        define('WP_ENVIRONMENT_TYPE', 'local');
+        define('WPMCP_BRIDGE_ALLOWED_IPS', getenv('WPMCP_BRIDGE_ALLOWED_IPS') ?: '127.0.0.1,::1,' . gethostbyname(gethostname()));
+      WPMCP_BRIDGE_ALLOWED_IPS: ${WPMCP_BRIDGE_ALLOWED_IPS:-}
+    ports:
+      - "127.0.0.1:${WP_DEV_PORT:-8081}:80"
+    volumes:
+      - wp:/var/www/html
+      # The bridge plugin under development, mounted read-only like production (root-owned).
+      - ../wordpress/mu-plugins:/var/www/html/wp-content/mu-plugins:ro
+
+  # One-off WP-CLI runs: `bin/dev wp <args>`. Same files, same uid as Apache (33).
+  wpcli:
+    image: docker.io/library/wordpress:cli-php8.2
+    profiles: ["tools"]
+    user: "33:33"
+    # No depends_on: `compose run` would recreate the database container under podman-compose.
+    environment: *wp-env
+    volumes:
+      - wp:/var/www/html
+      - ../wordpress/mu-plugins:/var/www/html/wp-content/mu-plugins:ro
+      - ./:/dev-scripts:ro
+
+volumes:
+  db:
+  wp:

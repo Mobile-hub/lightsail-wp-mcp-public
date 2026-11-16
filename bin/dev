@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Local WordPress for integration tests (podman or docker compose), loopback only.
+#
+#   bin/dev up          start MariaDB + WordPress, install core, plugins and fixtures
+#   bin/dev wp <args>   run WP-CLI inside the stack
+#   bin/dev url         print the site URL
+#   bin/dev down        stop it (data kept)
+#   bin/dev reset       stop it and delete its data
+#
+# Plugin versions are the ones tested; override with WP_DEV_CORE / WP_DEV_POLYLANG / WP_DEV_AIOSEO.
+source "$(dirname "$0")/lib.sh"
+
+port="${WP_DEV_PORT:-$(env_get WP_DEV_PORT 8081)}"
+url="http://127.0.0.1:${port}"
+
+compose_cmd() {
+  if have docker && docker compose version >/dev/null 2>&1; then echo "docker compose"
+  elif have podman-compose; then echo "podman-compose"
+  elif have podman && podman compose version >/dev/null 2>&1; then echo "podman compose"
+  else return 1; fi
+}
+
+compose() {
+  local cmd
+  cmd="$(compose_cmd)" || die "no compose found: install docker compose or podman-compose"
+  export WP_DEV_PORT="$port" PODMAN_COMPOSE_WARNING_LOGS=false
+  # shellcheck disable=SC2086
+  $cmd -f "$ROOT/dev/compose.yml" "$@"
+}
+
+wp() { compose --profile tools run --rm --no-deps -T wpcli wp "$@"; }
+
+wait_for() {
+  local what="$1" timeout="$2" start=$SECONDS; shift 2
+  until "$@" >/dev/null 2>&1; do
+    (( SECONDS - start >= timeout )) && die "timed out waiting for $what"
+    sleep 2
+  done
+  ok "$what"
+}
+
+version_arg() { [[ -n "$1" ]] && printf -- '--version=%s' "$1"; return 0; }
+
+provision() {
+  wait_for "WordPress answers on $url" 120 curl -fsS -o /dev/null "$url/wp-admin/install.php"
+  if ! wp core is-installed 2>/dev/null; then
+    wp core install --url="$url" --title="wpmcp dev" --admin_user=admin \
+      --admin_password="dev-only-password" --admin_email=admin@example.test --skip-email
+  fi
+  local core="${WP_DEV_CORE:-$(env_get WP_DEV_CORE)}"
+  # shellcheck disable=SC2046
+  wp core update $(version_arg "$core") || warn "core update skipped"
+  wp core update-db || true
+  # shellcheck disable=SC2046
+  wp plugin install polylang --activate \
+    $(version_arg "${WP_DEV_POLYLANG:-$(env_get WP_DEV_POLYLANG)}")
+  # shellcheck disable=SC2046
+  wp plugin install all-in-one-seo-pack --activate \
+    $(version_arg "${WP_DEV_AIOSEO:-$(env_get WP_DEV_AIOSEO)}")
+  wp rewrite structure '/%postname%/' --hard
+  wp eval-file /dev-scripts/charset.php
+  wp eval-file /dev-scripts/provision.php
+  # The integration user, as in production: an editor whose real capabilities come from
+  # the bridge plugin, with one Application Password kept in var/ (git-ignored).
+  if ! wp user get wpmcp --field=ID >/dev/null 2>&1; then
+    wp user create wpmcp wpmcp@example.test --role=editor --user_pass="$(random_secret)" --porcelain >/dev/null
+  fi
+  mkdir -p "$ROOT/var"
+  if [[ ! -s "$ROOT/var/dev-wp-app-password" ]]; then
+    (umask 077 && wp user application-password create wpmcp wpmcp-dev --porcelain >"$ROOT/var/dev-wp-app-password")
+  fi
+  ok "provisioned: $url (admin / dev-only-password; integration user wpmcp, password in var/dev-wp-app-password)"
+}
+
+case "${1:-}" in
+  up) compose up -d db wordpress; provision ;;
+  provision) provision ;;
+  wp) shift; wp "$@" ;;
+  url) echo "$url" ;;
+  down) compose down ;;
+  reset) compose down -v ;;
+  logs) shift; compose logs "${@:---tail=100}" ;;
+  *) die "usage: bin/dev up | provision | wp <args> | url | down | reset | logs" ;;
+esac

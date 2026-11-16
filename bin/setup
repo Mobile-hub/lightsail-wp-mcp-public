@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Local development setup: .venv from the locked dependency set, and a .env for a
+# loopback-only server with a generated signing secret.
+#   bin/setup          create .venv and .env (existing values are kept)
+#   bin/setup --dev    the same (kept for symmetry with editorial.workflow)
+source "$(dirname "$0")/lib.sh"
+
+run_uv sync --quiet --locked --extra dev
+ok ".venv (uv sync --locked)"
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  : >"$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+fi
+mkdir -p "$ROOT/var"
+chmod 700 "$ROOT/var"
+[[ -n "$(env_get WPMCP_SECRET)" ]] || env_set WPMCP_SECRET "$(random_secret 48)"
+[[ -n "$(env_get WPMCP_DB)" ]] || env_set WPMCP_DB "$ROOT/var/wpmcp.sqlite"
+[[ -n "$(env_get WPMCP_PUBLIC_URL)" ]] || env_set WPMCP_PUBLIC_URL "http://127.0.0.1:8080"
+[[ -n "$(env_get WPMCP_INSECURE_DEV)" ]] || env_set WPMCP_INSECURE_DEV "true"
+[[ -n "$(env_get WPMCP_SITE_NAME)" ]] || env_set WPMCP_SITE_NAME "WordPress (dev)"
+ok "$ENV_FILE (mode 600)"
+info "next: bin/wpmcp owner set, then bin/wpmcp client add --preset claude"

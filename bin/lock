@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Pin every dependency, with hashes, so that what runs is what was reviewed:
+#
+#   uv.lock                    the project and its dev tools
+#   deploy/requirements.txt    the runtime set the server installs with --require-hashes
+#
+# Run it after changing pyproject.toml, then commit both files.
+source "$(dirname "$0")/lib.sh"
+
+run_uv lock --quiet
+ok "uv.lock"
+run_uv export --quiet --frozen --no-emit-project --no-dev -o deploy/requirements.txt
+ok "deploy/requirements.txt"

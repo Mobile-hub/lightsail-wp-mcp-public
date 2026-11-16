@@ -1,0 +1,18 @@
+#!/bin/bash
+# Administration CLI on the server: runs `wpmcp <command>` as the service user, with the
+# service's settings. Examples:
+#   sudo wpmcp-admin owner set
+#   sudo wpmcp-admin client add --preset claude
+#   sudo wpmcp-admin grant list
+set -euo pipefail
+if [[ $EUID -ne 0 ]]; then exec sudo "$0" "$@"; fi
+case "${1:-}" in
+  serve) echo "use: systemctl restart wpmcp" >&2; exit 2 ;;
+esac
+set -a
+# shellcheck disable=SC1091
+. /etc/wpmcp/wpmcp.env
+set +a
+export WPMCP_SECRET_FILE=/etc/wpmcp/secret WPMCP_WP_PASSWORD_FILE=/etc/wpmcp/wp-app-password
+cd /var/lib/wpmcp
+exec setpriv --reuid=wpmcp --regid=wpmcp --init-groups -- /opt/wpmcp/current/venv/bin/wpmcp "$@"

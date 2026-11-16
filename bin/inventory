@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# Read-only inventory of the WordPress server, over SSH. It changes nothing on the box and
+# prints no secrets, user names or e-mail addresses: versions, modules, counts and flags.
+#
+#   bin/inventory > var/inventory.txt
+#
+# Target: INVENTORY_SSH / INVENTORY_SSH_KEY, or else DEPLOY_SSH / DEPLOY_SSH_KEY, from the
+# environment, the site file (SITE_ENV, default deploy/site.env) or .env. Keep the output
+# and any summary of it outside the repository: it describes one server.
+source "$(dirname "$0")/lib.sh"
+
+target="$(setting INVENTORY_SSH "$(setting DEPLOY_SSH)")"
+key="$(setting INVENTORY_SSH_KEY "$(setting DEPLOY_SSH_KEY)")"
+[[ -n "$target" ]] || die "set INVENTORY_SSH (user@host)"
+[[ -z "$key" || -r "$key" ]] || die "cannot read INVENTORY_SSH_KEY: $key"
+
+ssh_args=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes)
+[[ -n "$key" ]] && ssh_args+=(-i "$key" -o IdentitiesOnly=yes)
+
+# The remote script is quoted: nothing in it is expanded on this machine.
+ssh "${ssh_args[@]}" "$target" 'bash -s' <<'REMOTE'
+set -u
+export PATH="/opt/bitnami/wp-cli/bin:/opt/bitnami/php/bin:/opt/bitnami/apache/bin:/opt/bitnami/mariadb/bin:$PATH"
+WP=/opt/bitnami/wordpress
+sec() { printf '\n## %s\n' "$*"; }
+# Bitnami's wp wrapper must start as root; it then drops to the web server user itself.
+wp() { sudo -n /opt/bitnami/wp-cli/bin/wp "$@"; }
+wpq() { wp --path="$WP" --skip-themes "$@" 2>/dev/null; }
+
+sec system
+( . /etc/os-release && echo "os: $PRETTY_NAME" )
+echo "kernel: $(uname -r)"
+echo "systemd: $(systemctl --version | head -1)"
+echo "python: $(python3 --version 2>&1)"
+echo "python venv module: $(python3 -c 'import venv, ensurepip; print("yes")' 2>/dev/null || echo no)"
+echo "cpus: $(nproc)"
+free -m | sed -n '1,3p'
+echo "swap: $(swapon --noheadings --show=NAME,SIZE 2>/dev/null | tr '\n' ' ')"
+df -h / | tail -1
+echo "uptime: $(uptime)"
+
+sec listeners
+sudo -n ss -ltnH 2>/dev/null | awk '{print $4}' | sort -u | tr '\n' ' '; echo
+sudo -n ss -ltnpH 2>/dev/null | grep -oE 'users:\(\("[^"]+"' | sort | uniq -c
+
+sec running services
+systemctl list-units --type=service --state=running --no-legend 2>/dev/null | awk '{print $1}' | tr '\n' ' '; echo
+
+sec ssh daemon
+sudo -n sshd -T 2>/dev/null | grep -E '^(passwordauthentication|permitrootlogin|pubkeyauthentication|kbdinteractiveauthentication) '
+
+sec apache
+httpd -v 2>/dev/null | head -1
+echo "modules: $(httpd -M 2>/dev/null | grep -oE '(proxy[a-z_]*|rewrite|ssl|headers|remoteip|http2|mpm_[a-z]+|php[0-9]*|unixd|authz_host)_module' | tr '\n' ' ')"
+echo "vhost files: $(ls /opt/bitnami/apache/conf/vhosts/ 2>/dev/null | tr '\n' ' ')"
+grep -rhoE '^\s*(ServerName|ServerAlias|AllowOverride|SSLCertificateFile|ProxyPass|Include)\s+\S+.*' \
+  /opt/bitnami/apache/conf/vhosts/ /opt/bitnami/apache/conf/bitnami/bitnami.conf \
+  /opt/bitnami/apache/conf/bitnami/bitnami-ssl.conf 2>/dev/null | sed 's/^\s*//' | sort | uniq -c
+echo "authorization passthrough: $(grep -rlE 'HTTP_AUTHORIZATION|CGIPassAuth' /opt/bitnami/apache/conf "$WP/.htaccess" 2>/dev/null | tr '\n' ' ')"
+
+sec php
+php -v 2>/dev/null | head -1
+echo "fpm: $(pgrep -c php-fpm 2>/dev/null || echo 0) processes"
+grep -hE '^(pm|pm\.[a-z_]+|listen)\s*=' /opt/bitnami/php/etc/php-fpm.d/*.conf /opt/bitnami/php/etc/memory.conf 2>/dev/null
+echo "memory_limit: $(php -r 'echo ini_get("memory_limit");' 2>/dev/null)"
+
+sec tls
+ls /opt/bitnami/letsencrypt 2>/dev/null | tr '\n' ' '; echo
+echo "bncert-tool: $(ls /opt/bitnami/bncert-tool 2>/dev/null || echo absent)"
+echo "certificates: $(sudo -n ls /opt/bitnami/letsencrypt/certificates 2>/dev/null | grep -E '\.crt$' | tr '\n' ' ')"
+echo "renewal jobs: $( (sudo -n crontab -l 2>/dev/null; crontab -l 2>/dev/null) | grep -ciE 'lego|bncert|certbot')"
+(sudo -n crontab -l 2>/dev/null; crontab -l 2>/dev/null) | grep -iE 'lego|bncert|certbot' | sed -E 's/--email[= ]"?[^ "]+"?/--email <masked>/'
+
+sec wordpress
+echo "core: $(wpq core version)"
+echo "core update: $(wpq core check-update --field=version --format=csv | tr '\n' ' ')"
+for opt in siteurl home blog_charset permalink_structure default_comment_status comment_moderation \
+           users_can_register default_role WPLANG; do
+  echo "option $opt: $(wpq option get "$opt")"
+done
+for const in WP_DEBUG WP_POST_REVISIONS DISALLOW_FILE_EDIT DISALLOW_FILE_MODS FORCE_SSL_ADMIN \
+             WP_AUTO_UPDATE_CORE AUTOMATIC_UPDATER_DISABLED WP_MEMORY_LIMIT DB_CHARSET DB_COLLATE \
+             WP_ENVIRONMENT_TYPE; do
+  echo "const $const: $(wpq config get "$const" || echo '(unset)')"
+done
+echo "table prefix: $(wpq config get table_prefix)"
+
+sec plugins
+wpq plugin list --fields=name,status,version,update,auto_update --format=csv
+echo "mu-plugins dir: $(ls -la "$WP/wp-content/mu-plugins" 2>/dev/null | tail -n +2 | awk '{print $1, $3":"$4, $9}' | tr '\n' ';')"
+echo "drop-ins: $(wpq plugin list --status=dropin --field=name | tr '\n' ' ')"
+
+sec themes
+wpq theme list --fields=name,status,version,update --format=csv
+
+sec file ownership
+stat -c '%A %U:%G %n' "$WP" "$WP/wp-config.php" "$WP/wp-content" "$WP/wp-content/plugins" \
+  "$WP/wp-content/uploads" "$WP/.htaccess" 2>/dev/null
+echo "backups in web root: $(ls "$WP/wp-content/ai1wm-backups" 2>/dev/null | grep -c '\.wpress$') .wpress files, $(du -sh "$WP/wp-content/ai1wm-backups" 2>/dev/null | cut -f1)"
+echo "backup dir guards: $(ls -A "$WP/wp-content/ai1wm-backups" 2>/dev/null | grep -vE '\.wpress$' | tr '\n' ' ')"
+
+sec REST namespaces and the plugins that add them
+wpq eval 'echo implode( " ", rest_get_server()->get_namespaces() ), "\n";'
+for ns in $(wpq eval 'echo implode( " ", rest_get_server()->get_namespaces() );'); do
+  case "$ns" in wp/v2|wp-site-health/v1|wp-block-editor/v1|oembed/1.0|wpmcp/v1) continue ;; esac
+  echo "$ns: $(grep -rlF "'${ns%%/*}" "$WP/wp-content/plugins" "$WP/wp-content/mu-plugins" --include='*.php' \
+    2>/dev/null | sed -E "s#$WP/wp-content/((mu-)?plugins/[^/]+).*#\1#" | sort -u | tr '\n' ' ')"
+done
+
+sec database
+wpq db query "SELECT VERSION() AS version" --skip-column-names
+wpq db query "SELECT TABLE_NAME, TABLE_COLLATION, TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME" --skip-column-names
+
+sec 'content (counts only)'
+wp --path="$WP" eval-file - 2>/dev/null <<'PHP'
+<?php
+foreach ( array( 'post', 'page', 'attachment', 'nav_menu_item', 'revision' ) as $type ) {
+    $counts = array_filter( (array) wp_count_posts( $type ) );
+    echo $type . ': ' . wp_json_encode( $counts ) . "\n";
+}
+echo 'post types: ' . implode( ', ', get_post_types( array( 'public' => true ) ) ) . "\n";
+echo 'custom post types: ' . implode( ', ', get_post_types( array( '_builtin' => false ) ) ) . "\n";
+echo 'taxonomies: ' . implode( ', ', get_taxonomies() ) . "\n";
+echo 'categories: ' . wp_count_terms( array( 'taxonomy' => 'category', 'hide_empty' => false ) ) . "\n";
+echo 'tags: ' . wp_count_terms( array( 'taxonomy' => 'post_tag', 'hide_empty' => false ) ) . "\n";
+echo 'front page: show_on_front=' . get_option( 'show_on_front' ) . ' page_on_front=' . (int) get_option( 'page_on_front' ) . ' page_for_posts=' . (int) get_option( 'page_for_posts' ) . "\n";
+echo 'privacy page id: ' . (int) get_option( 'wp_page_for_privacy_policy' ) . "\n";
+
+$roles = array();
+$with_app_passwords = 0;
+foreach ( get_users( array( 'fields' => array( 'ID' ) ) ) as $user ) {
+    $data = get_userdata( $user->ID );
+    foreach ( $data->roles as $role ) {
+        $roles[ $role ] = ( $roles[ $role ] ?? 0 ) + 1;
+    }
+    if ( class_exists( 'WP_Application_Passwords' ) && WP_Application_Passwords::get_user_application_passwords( $user->ID ) ) {
+        $with_app_passwords++;
+    }
+}
+echo 'users by role: ' . wp_json_encode( $roles ) . "\n";
+echo 'users with application passwords: ' . $with_app_passwords . "\n";
+echo 'application passwords available: ' . ( wp_is_application_passwords_available() ? 'yes' : 'no' ) . "\n";
+echo 'defined roles: ' . implode( ', ', array_keys( wp_roles()->roles ) ) . "\n";
+echo 'editor has unfiltered_html: ' . ( get_role( 'editor' )->has_cap( 'unfiltered_html' ) ? 'yes' : 'no' ) . "\n";
+echo 'editor has edit_theme_options: ' . ( get_role( 'editor' )->has_cap( 'edit_theme_options' ) ? 'yes' : 'no' ) . "\n";
+echo 'abilities api: ' . ( function_exists( 'wp_register_ability' ) ? 'yes' : 'no' ) . "\n";
+echo 'rest namespaces: ' . implode( ', ', rest_get_server()->get_namespaces() ) . "\n";
+
+echo "\n-- polylang\n";
+if ( function_exists( 'pll_languages_list' ) ) {
+    echo 'version: ' . ( defined( 'POLYLANG_VERSION' ) ? POLYLANG_VERSION : '?' ) . ' pro: ' . ( defined( 'POLYLANG_PRO' ) ? 'yes' : 'no' ) . "\n";
+    echo 'languages: ' . implode( ', ', pll_languages_list() ) . ' default: ' . pll_default_language() . "\n";
+    echo 'locales: ' . implode( ', ', pll_languages_list( array( 'fields' => 'locale' ) ) ) . "\n";
+    $options = get_option( 'polylang' );
+    foreach ( array( 'force_lang', 'hide_default', 'browser', 'media_support', 'redirect_lang', 'rewrite' ) as $key ) {
+        echo "option $key: " . wp_json_encode( $options[ $key ] ?? null ) . "\n";
+    }
+    echo 'translated post types: ' . implode( ', ', array_keys( array_filter( array_map( 'pll_is_translated_post_type', array_combine( get_post_types(), get_post_types() ) ) ) ) ) . "\n";
+    echo 'nav menus per language: ' . wp_json_encode( $options['nav_menus'] ?? null ) . "\n";
+    foreach ( array( 'pll_set_post_language', 'pll_save_post_translations', 'pll_get_post_translations', 'pll_set_term_language', 'pll_save_term_translations', 'pll_insert_post' ) as $fn ) {
+        echo "function $fn: " . ( function_exists( $fn ) ? 'yes' : 'no' ) . "\n";
+    }
+
+    foreach ( array( 'post', 'page' ) as $type ) {
+        $ids       = get_posts( array( 'post_type' => $type, 'post_status' => 'publish', 'numberposts' => -1, 'fields' => 'ids', 'lang' => '' ) );
+        $by_lang   = array();
+        $group_len = array();
+        $seen      = array();
+        foreach ( $ids as $id ) {
+            $lang             = pll_get_post_language( $id ) ?: '(none)';
+            $by_lang[ $lang ] = ( $by_lang[ $lang ] ?? 0 ) + 1;
+            if ( isset( $seen[ $id ] ) ) {
+                continue;
+            }
+            $group = array_values( array_filter( pll_get_post_translations( $id ) ) ) ?: array( $id );
+            foreach ( $group as $member ) {
+                $seen[ $member ] = true;
+            }
+            $size               = count( $group );
+            $group_len[ $size ] = ( $group_len[ $size ] ?? 0 ) + 1;
+        }
+        ksort( $group_len );
+        echo "published $type by language: " . wp_json_encode( $by_lang ) . ' translation groups by size: ' . wp_json_encode( $group_len ) . "\n";
+    }
+} else {
+    echo "not active\n";
+}
+
+echo "\n-- all in one seo\n";
+echo 'version: ' . ( defined( 'AIOSEO_VERSION' ) ? AIOSEO_VERSION : 'not active' ) . "\n";
+echo 'post model: ' . ( class_exists( '\\AIOSEO\\Plugin\\Common\\Models\\Post' ) ? 'yes' : 'no' ) . "\n";
+echo 'rest fields on post: ' . implode( ', ', array_keys( $GLOBALS['wp_rest_additional_fields']['post'] ?? array() ) ) . "\n";
+
+echo "\n-- kses audit (would a save by a user without unfiltered_html change the content?)\n";
+$changed = array();
+$total   = 0;
+$blocks  = array();
+$classic = 0;
+foreach ( get_posts( array( 'post_type' => array( 'post', 'page' ), 'post_status' => array( 'publish', 'draft', 'pending', 'future', 'private' ), 'numberposts' => -1, 'lang' => '' ) ) as $post ) {
+    $total++;
+    if ( wp_kses_post( $post->post_content ) !== $post->post_content ) {
+        $changed[] = $post->ID . ':' . $post->post_type . ':' . $post->post_status;
+    }
+    if ( has_blocks( $post->post_content ) ) {
+        foreach ( parse_blocks( $post->post_content ) as $block ) {
+            if ( $block['blockName'] ) {
+                $blocks[ $block['blockName'] ] = ( $blocks[ $block['blockName'] ] ?? 0 ) + 1;
+            }
+        }
+    } else {
+        $classic++;
+    }
+}
+arsort( $blocks );
+echo "items checked: $total, kses would change: " . count( $changed ) . "\n";
+echo 'changed ids: ' . implode( ' ', array_slice( $changed, 0, 60 ) ) . "\n";
+echo "classic (no blocks): $classic\n";
+echo 'top-level block types: ' . wp_json_encode( $blocks ) . "\n";
+PHP
+
+sec loopback access to the site
+site="$(wpq option get home | sed -E 's#^https?://##; s#/.*##')"
+echo "https via 127.0.0.1 with SNI: $(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+  --resolve "$site:443:127.0.0.1" "https://$site/wp-json/")"
+echo "basic auth reaches PHP: $(curl -s --max-time 15 --resolve "$site:443:127.0.0.1" \
+  -u 'inventory-probe:invalid' "https://$site/wp-json/wp/v2/users/me" \
+  | grep -oE '"code":"[a-z_]+"' | head -1)"
+REMOTE

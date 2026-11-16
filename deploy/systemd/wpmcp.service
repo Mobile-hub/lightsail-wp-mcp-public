@@ -1,0 +1,69 @@
+# wpmcp: OAuth 2.1 authorization server + MCP endpoint, behind Apache on a Unix socket.
+# Installed by deploy/remote-install.sh. Secrets come in as systemd credentials.
+[Unit]
+Description=wpmcp - MCP server for the WordPress site
+After=network.target bitnami.service wpmcp-media.socket
+Wants=network.target wpmcp-media.socket
+
+[Service]
+Type=exec
+User=wpmcp
+Group=wpmcp
+EnvironmentFile=/etc/wpmcp/wpmcp.env
+LoadCredential=wpmcp-secret:/etc/wpmcp/secret
+LoadCredential=wp-app-password:/etc/wpmcp/wp-app-password
+ExecStart=/opt/wpmcp/current/venv/bin/wpmcp serve
+Restart=on-failure
+RestartSec=3
+
+# The socket directory comes from tmpfiles.d (wpmcp:daemon, 0710): Apache may enter it,
+# nobody else. Not RuntimeDirectory=, which would reset its group on every start.
+ReadWritePaths=/run/wpmcp
+StateDirectory=wpmcp
+StateDirectoryMode=0700
+UMask=0077
+
+# Resources: the box has 1 GB shared with MariaDB, PHP and Apache.
+MemoryHigh=160M
+MemoryMax=256M
+TasksMax=64
+LimitNOFILE=1024
+
+# Network: only loopback (WordPress on 127.0.0.1:443); nothing from or to the internet.
+# Images go to the worker over a Unix socket (wpmcp-media.socket), which IPAddress*= does
+# not cover; the worker is the part that may download.
+IPAddressDeny=any
+IPAddressAllow=localhost
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Filesystem: read-only system, no home directories, no WordPress files, keys or database.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+InaccessiblePaths=-/bitnami -/opt/bitnami/wordpress -/opt/bitnami/letsencrypt -/opt/bitnami/mariadb -/opt/bitnami/apache/conf -/home
+
+# Kernel and privileges.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+[Install]
+WantedBy=multi-user.target

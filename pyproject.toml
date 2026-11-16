@@ -1,0 +1,63 @@
+[project]
+name = "wpmcp"
+version = "0.3.0"
+description = "Remote MCP server with its own OAuth 2.1 authorization server, to operate a self-hosted WordPress site from ChatGPT and Claude."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+# Keep this list short: every runtime dependency runs on the production box.
+# starlette >= 1.6: per-route max_body_size (also cuts chunked bodies).
+# mcp < 2: the 1.x line is the one verified against ChatGPT and Claude (see docs/architecture.md).
+dependencies = [
+  "starlette>=1.6",
+  "uvicorn>=0.30",
+  "httpx>=0.27",
+  "httpcore>=1.0",
+  "python-multipart>=0.0.9",
+  "mcp>=1.30,<2",
+  # Images are decoded and re-encoded only in the image worker (media/worker.py).
+  "pillow>=11.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "ruff>=0.6",
+]
+
+[project.scripts]
+wpmcp = "wpmcp.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wpmcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+  "ignore::DeprecationWarning:starlette.*",
+  "ignore:Using `httpx` with `starlette.testclient`",
+  "ignore:unclosed database:ResourceWarning",
+]
+
+[tool.coverage.run]
+source = ["wpmcp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S104", "S105", "S106", "S107"]
+"src/wpmcp/auth/pages.py" = ["E501"]

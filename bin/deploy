@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Builds a release and installs it on the server (deploy/remote-install.sh, as root).
+#
+#   bin/deploy                                  # settings from deploy/site.env
+#   SITE_ENV=/path/to/site.env bin/deploy       # or from a file kept elsewhere
+#
+# Settings (see deploy/site.env.example): DEPLOY_SSH, DEPLOY_SSH_KEY, MCP_HOST, WP_HOST,
+# SITE_NAME, optional EXTRA_MU_PLUGINS and WPMCP_* overrides. Each can also come from the
+# environment.
+#
+# Ships: the wheel, the hash-pinned requirements, the bridge mu-plugin (plus any extra
+# mu-plugins), the systemd units, Apache vhosts rendered for MCP_HOST, settings without
+# secrets and a fresh client egress list. Runs the test suite first; set
+# DEPLOY_SKIP_TESTS=1 to skip it.
+source "$(dirname "$0")/lib.sh"
+
+target="$(setting DEPLOY_SSH)"
+key="$(setting DEPLOY_SSH_KEY)"
+mcp_host="$(setting MCP_HOST)"
+wp_host="$(setting WP_HOST)"
+site_name="$(setting SITE_NAME WordPress)"
+extra_mu="$(setting EXTRA_MU_PLUGINS)"
+[[ -n "$target" ]] || die "set DEPLOY_SSH (user@host) in $SITE_ENV"
+[[ -z "$key" || -r "$key" ]] || die "cannot read DEPLOY_SSH_KEY: $key"
+host_re='^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'
+[[ "$mcp_host" =~ $host_re ]] || die "MCP_HOST must be a lower-case host name, e.g. mcp.example.org"
+[[ "$wp_host" =~ $host_re ]] || die "WP_HOST must be a lower-case host name, e.g. example.org"
+[[ "$mcp_host" != "$wp_host" ]] || die "MCP_HOST needs its own name, not the site's"
+# wpmcp.env is read by systemd and sourced by wpmcp-admin: keep values shell-inert.
+shell_safe() { [[ "$1" != *[\"\$\`\\]* && "$1" != *$'\n'* ]]; }
+shell_safe "$site_name" || die "SITE_NAME must not contain quotes, \$, backticks or backslashes"
+[[ -z "$extra_mu" || -d "$extra_mu" ]] || die "EXTRA_MU_PLUGINS is not a directory: $extra_mu"
+ssh_args=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes)
+[[ -n "$key" ]] && ssh_args+=(-i "$key" -o IdentitiesOnly=yes)
+
+[[ "${DEPLOY_SKIP_TESTS:-}" == 1 ]] || "$ROOT/bin/test"
+
+stage="$ROOT/var/deploy/stage"
+rm -rf "$stage" && mkdir -p "$stage/apache" "$stage/mu-plugins/extra" "$stage/systemd"
+run_uv build --wheel --quiet --out-dir "$stage" >/dev/null
+"$ROOT/bin/cidrs-update" >"$stage/cidrs.txt"
+cp "$ROOT/deploy/requirements.txt" "$ROOT/deploy/wpmcp-admin" "$ROOT/deploy/remote-install.sh" "$stage/"
+cp "$ROOT"/deploy/systemd/* "$stage/systemd/"
+cp -r "$ROOT/wordpress/mu-plugins/wpmcp-bridge.php" "$ROOT/wordpress/mu-plugins/wpmcp-bridge" \
+  "$stage/mu-plugins/"
+if [[ -n "$extra_mu" ]]; then
+  find "$extra_mu" -maxdepth 1 -type f -name '*.php' -exec cp {} "$stage/mu-plugins/extra/" \;
+fi
+
+# Templates: @MCP_HOST@, @WP_HOST@ and @SITE_NAME@ are replaced; nothing else is expanded.
+render() {
+  python3 -I -c 'import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+for pair in sys.argv[3:]:
+    key, value = pair.split("=", 1)
+    text = text.replace("@" + key + "@", value)
+left = re.findall(r"@[A-Z_]+@", text)
+if left:
+    sys.exit(f"{sys.argv[1]}: unknown placeholder {left[0]}")
+open(sys.argv[2], "w", encoding="utf-8").write(text)' \
+    "$1" "$2" "MCP_HOST=$mcp_host" "WP_HOST=$wp_host" "SITE_NAME=$site_name"
+}
+render "$ROOT/deploy/wpmcp.env" "$stage/wpmcp.env"
+for conf in "$ROOT"/deploy/apache/*.conf; do render "$conf" "$stage/apache/$(basename "$conf")"; done
+# WPMCP_* lines of the site file override the defaults (the last assignment wins).
+if [[ -f "$SITE_ENV" ]]; then
+  while IFS= read -r line; do
+    [[ "$line" =~ ^WPMCP_[A-Z0-9_]+= ]] || continue
+    value="${line#*=}"; value="${value%\"}"; value="${value#\"}"
+    shell_safe "$value" || die "unsafe value in $SITE_ENV: ${line%%=*}"
+    printf '%s="%s"\n' "${line%%=*}" "$value" >>"$stage/wpmcp.env"
+  done <"$SITE_ENV"
+fi
+printf 'MCP_HOST=%s\nWP_HOST=%s\n' "$mcp_host" "$wp_host" >"$stage/site.conf"
+python3 -c 'import tomllib,sys; print(tomllib.load(open(sys.argv[1],"rb"))["project"]["version"])' \
+  "$ROOT/pyproject.toml" >"$stage/VERSION"
+info "release $(cat "$stage/VERSION") for $mcp_host -> $target"
+
+# shellcheck disable=SC2016 # expanded on the server
+tar -C "$stage" -cz . | ssh "${ssh_args[@]}" "$target" \
+  'd="$(mktemp -d)"; trap "rm -rf \"$d\"" EXIT; tar -C "$d" -xz && sudo -n bash "$d/remote-install.sh" "$d"'
+ok "deployed"

@@ -1,0 +1,16 @@
+# wpmcp image worker: systemd starts one wpmcp-media@.service per connection (Accept=yes),
+# so every image is decoded in a fresh, sandboxed process that exits when it is done.
+# Installed by deploy/remote-install.sh. Only the wpmcp service (group wpmcp) may connect.
+[Unit]
+Description=wpmcp image worker socket
+
+[Socket]
+ListenStream=/run/wpmcp-media.sock
+Accept=yes
+SocketUser=root
+SocketGroup=wpmcp
+SocketMode=0660
+MaxConnections=4
+
+[Install]
+WantedBy=sockets.target

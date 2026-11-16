@@ -1,0 +1,4 @@
+source-path=SCRIPTDIR
+external-sources=true
+# ok/warn/err only print, so "A && ok || err" is a safe idiom here.
+disable=SC2015

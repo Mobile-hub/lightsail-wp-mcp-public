@@ -1,0 +1,58 @@
+# wpmcp image worker: one process per image, the connection on stdin/stdout
+# (wpmcp-media.socket). It decodes untrusted images and downloads ChatGPT's file links, so
+# it is the only part of wpmcp with internet access, and it holds nothing worth stealing:
+# a throwaway user, no credentials, no access to the service's files, WordPress or its
+# database, and no way to reach loopback or private addresses.
+# Installed by deploy/remote-install.sh, which adds the DNS resolver in dns.conf.
+[Unit]
+Description=wpmcp image worker (one process per image)
+
+[Service]
+ExecStart=/opt/wpmcp/current/venv/bin/wpmcp media-worker
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+DynamicUser=yes
+Environment=PYTHONDONTWRITEBYTECODE=1
+RuntimeMaxSec=120
+
+# Resources: a 16-megapixel image decodes to about 64 MB.
+MemoryHigh=200M
+MemoryMax=320M
+TasksMax=16
+LimitNOFILE=64
+
+# Network: public addresses only. Loopback (WordPress, the wpmcp service), link-local
+# (instance metadata), private and carrier-grade ranges are refused by the kernel, which
+# also closes the gap between fetch.py's DNS check and the connection itself.
+IPAddressDeny=localhost link-local multicast 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+# Filesystem: read-only system, nothing of wpmcp, WordPress or the home directories.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+InaccessiblePaths=-/etc/wpmcp -/var/lib/wpmcp -/run/wpmcp -/bitnami -/opt/bitnami -/root -/home
+
+# Kernel and privileges.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
