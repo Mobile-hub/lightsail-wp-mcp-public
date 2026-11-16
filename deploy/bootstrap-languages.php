@@ -2,7 +2,7 @@
 /**
  * Polylang languages for a fresh site, from SITE_LANGUAGES (WordPress locales, comma
  * separated; the first is the default). Existing languages are kept; items without a
- * language get the default one. Run by bootstrap-site.sh through `wp eval-file`.
+ * language get the default one. Run by bootstrap-site.sh through `wp eval-file -`.
  */
 
 if ( ! function_exists( 'PLL' ) || ! function_exists( 'pll_languages_list' ) ) {

@@ -4,28 +4,27 @@
 #
 #   bin/inventory > var/inventory.txt
 #
-# Target: INVENTORY_SSH / INVENTORY_SSH_KEY, or else DEPLOY_SSH / DEPLOY_SSH_KEY, from the
-# environment, the site file (SITE_ENV, default deploy/site.env) or .env. Keep the output
-# and any summary of it outside the repository: it describes one server.
+# Target: INVENTORY_SSH / INVENTORY_SSH_KEY, or else DEPLOY_SSH / DEPLOY_SSH_KEY, and
+# PLATFORM, from the environment, the site file (SITE_ENV, default deploy/site.env) or
+# .env. Keep the output and any summary of it outside the repository: it describes one
+# server.
 source "$(dirname "$0")/lib.sh"
 
-target="$(setting INVENTORY_SSH "$(setting DEPLOY_SSH)")"
-key="$(setting INVENTORY_SSH_KEY "$(setting DEPLOY_SSH_KEY)")"
-[[ -n "$target" ]] || die "set INVENTORY_SSH (user@host)"
-[[ -z "$key" || -r "$key" ]] || die "cannot read INVENTORY_SSH_KEY: $key"
+ssh_setup INVENTORY
+platform="$(site_platform)"
 
-ssh_args=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes)
-[[ -n "$key" ]] && ssh_args+=(-i "$key" -o IdentitiesOnly=yes)
-
-# The remote script is quoted: nothing in it is expanded on this machine.
-ssh "${ssh_args[@]}" "$target" 'bash -s' <<'REMOTE'
+# The platform's file (paths, wp, and its apache/php/tls sections) and then the common
+# part, as one script on stdin, run as root. Both only read. The remote part is quoted:
+# nothing in it is expanded on this machine.
+{
+  cat "$ROOT/deploy/platform.$platform.sh"
+  cat <<'REMOTE'
 set -u
-export PATH="/opt/bitnami/wp-cli/bin:/opt/bitnami/php/bin:/opt/bitnami/apache/bin:/opt/bitnami/mariadb/bin:$PATH"
-WP=/opt/bitnami/wordpress
 sec() { printf '\n## %s\n' "$*"; }
-# Bitnami's wp wrapper must start as root; it then drops to the web server user itself.
-wp() { sudo -n /opt/bitnami/wp-cli/bin/wp "$@"; }
-wpq() { wp --path="$WP" --skip-themes "$@" 2>/dev/null; }
+wpq() { wp --skip-themes "$@" 2>/dev/null; }
+# names <dir> [glob]: the entries of a directory on one line.
+names() { find "$1" -mindepth 1 -maxdepth 1 -name "${2:-*}" -printf '%f ' 2>/dev/null; }
+platform_check
 
 sec system
 ( . /etc/os-release && echo "os: $PRETTY_NAME" )
@@ -40,36 +39,16 @@ df -h / | tail -1
 echo "uptime: $(uptime)"
 
 sec listeners
-sudo -n ss -ltnH 2>/dev/null | awk '{print $4}' | sort -u | tr '\n' ' '; echo
-sudo -n ss -ltnpH 2>/dev/null | grep -oE 'users:\(\("[^"]+"' | sort | uniq -c
+ss -ltnH 2>/dev/null | awk '{print $4}' | sort -u | tr '\n' ' '; echo
+ss -ltnpH 2>/dev/null | grep -oE 'users:\(\("[^"]+"' | sort | uniq -c
 
 sec running services
 systemctl list-units --type=service --state=running --no-legend 2>/dev/null | awk '{print $1}' | tr '\n' ' '; echo
 
 sec ssh daemon
-sudo -n sshd -T 2>/dev/null | grep -E '^(passwordauthentication|permitrootlogin|pubkeyauthentication|kbdinteractiveauthentication) '
+sshd -T 2>/dev/null | grep -E '^(passwordauthentication|permitrootlogin|pubkeyauthentication|kbdinteractiveauthentication) '
 
-sec apache
-httpd -v 2>/dev/null | head -1
-echo "modules: $(httpd -M 2>/dev/null | grep -oE '(proxy[a-z_]*|rewrite|ssl|headers|remoteip|http2|mpm_[a-z]+|php[0-9]*|unixd|authz_host)_module' | tr '\n' ' ')"
-echo "vhost files: $(ls /opt/bitnami/apache/conf/vhosts/ 2>/dev/null | tr '\n' ' ')"
-grep -rhoE '^\s*(ServerName|ServerAlias|AllowOverride|SSLCertificateFile|ProxyPass|Include)\s+\S+.*' \
-  /opt/bitnami/apache/conf/vhosts/ /opt/bitnami/apache/conf/bitnami/bitnami.conf \
-  /opt/bitnami/apache/conf/bitnami/bitnami-ssl.conf 2>/dev/null | sed 's/^\s*//' | sort | uniq -c
-echo "authorization passthrough: $(grep -rlE 'HTTP_AUTHORIZATION|CGIPassAuth' /opt/bitnami/apache/conf "$WP/.htaccess" 2>/dev/null | tr '\n' ' ')"
-
-sec php
-php -v 2>/dev/null | head -1
-echo "fpm: $(pgrep -c php-fpm 2>/dev/null || echo 0) processes"
-grep -hE '^(pm|pm\.[a-z_]+|listen)\s*=' /opt/bitnami/php/etc/php-fpm.d/*.conf /opt/bitnami/php/etc/memory.conf 2>/dev/null
-echo "memory_limit: $(php -r 'echo ini_get("memory_limit");' 2>/dev/null)"
-
-sec tls
-ls /opt/bitnami/letsencrypt 2>/dev/null | tr '\n' ' '; echo
-echo "bncert-tool: $(ls /opt/bitnami/bncert-tool 2>/dev/null || echo absent)"
-echo "certificates: $(sudo -n ls /opt/bitnami/letsencrypt/certificates 2>/dev/null | grep -E '\.crt$' | tr '\n' ' ')"
-echo "renewal jobs: $( (sudo -n crontab -l 2>/dev/null; crontab -l 2>/dev/null) | grep -ciE 'lego|bncert|certbot')"
-(sudo -n crontab -l 2>/dev/null; crontab -l 2>/dev/null) | grep -iE 'lego|bncert|certbot' | sed -E 's/--email[= ]"?[^ "]+"?/--email <masked>/'
+platform_inventory
 
 sec wordpress
 echo "core: $(wpq core version)"
@@ -112,7 +91,7 @@ wpq db query "SELECT VERSION() AS version" --skip-column-names
 wpq db query "SELECT TABLE_NAME, TABLE_COLLATION, TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME" --skip-column-names
 
 sec 'content (counts only)'
-wp --path="$WP" eval-file - 2>/dev/null <<'PHP'
+wp eval-file - 2>/dev/null <<'PHP'
 <?php
 foreach ( array( 'post', 'page', 'attachment', 'nav_menu_item', 'revision' ) as $type ) {
     $counts = array_filter( (array) wp_count_posts( $type ) );
@@ -226,3 +205,4 @@ echo "basic auth reaches PHP: $(curl -s --max-time 15 --resolve "$site:443:127.0
   -u 'inventory-probe:invalid' "https://$site/wp-json/wp/v2/users/me" \
   | grep -oE '"code":"[a-z_]+"' | head -1)"
 REMOTE
+} | ssh "${ssh_args[@]}" "$ssh_target" 'sudo -n bash -s'

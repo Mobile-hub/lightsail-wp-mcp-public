@@ -32,7 +32,7 @@ env_get() {
   fi
 }
 
-# Settings of one deployment (bin/deploy, bin/inventory), outside .env so that the site's
+# Settings of one deployment (bin/deploy, bin/setup-server, ...), outside .env so that the site's
 # host names never need to be in the repository. See deploy/site.env.example.
 SITE_ENV="${SITE_ENV:-$ROOT/deploy/site.env}"
 
@@ -43,6 +43,76 @@ setting() {
   [[ -n "$value" ]] || value="$(ENV_FILE="$SITE_ENV" env_get "$key")"
   [[ -n "$value" ]] || value="$(env_get "$key" "${2:-}")"
   printf '%s' "${value/#\~\//$HOME/}"
+}
+
+HOST_RE='^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'
+
+# The server's platform, from PLATFORM in the site file (`terraform output platform` gives
+# it for a server made with infra/). Nothing detects it: it picks which
+# deploy/platform.<name>.sh and setup.<name>.sh the server gets.
+site_platform() {
+  local platform
+  platform="$(setting PLATFORM)"
+  [[ "$platform" == bitnami || "$platform" == debian ]] ||
+    die "set PLATFORM=bitnami or PLATFORM=debian in $SITE_ENV"
+  printf '%s' "$platform"
+}
+
+# ssh_setup [PREFIX]: the target and ssh options from <PREFIX>_SSH, <PREFIX>_SSH_KEY and
+# <PREFIX>_KNOWN_HOSTS (default DEPLOY_*), into the globals ssh_target and ssh_args.
+ssh_setup() {
+  local prefix="${1:-DEPLOY}" key known
+  ssh_target="$(setting "${prefix}_SSH" "$(setting DEPLOY_SSH)")"
+  key="$(setting "${prefix}_SSH_KEY" "$(setting DEPLOY_SSH_KEY)")"
+  known="$(setting "${prefix}_KNOWN_HOSTS" "$(setting DEPLOY_KNOWN_HOSTS)")"
+  [[ -n "$ssh_target" ]] || die "set ${prefix}_SSH (user@host) in $SITE_ENV"
+  [[ -z "$key" || -r "$key" ]] || die "cannot read ${prefix}_SSH_KEY: $key"
+  ssh_args=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes)
+  [[ -n "$key" ]] && ssh_args+=(-i "$key" -o IdentitiesOnly=yes)
+  [[ -n "$known" ]] && ssh_args+=(-o UserKnownHostsFile="$known")
+  return 0
+}
+
+# ship <stage dir> <script>: copy the staging directory to a temporary directory on the
+# server and run <script> from it as root; the directory is removed afterwards.
+ship() {
+  # shellcheck disable=SC2016 # expanded on the server
+  tar -C "$1" -cz . | ssh "${ssh_args[@]}" "$ssh_target" \
+    'd="$(mktemp -d)"; trap "rm -rf \"$d\"" EXIT; tar -C "$d" -xz && sudo -n bash "$d/'"$2"'" "$d"'
+}
+
+# render <template> <output> KEY=VALUE...: replaces @KEY@; nothing else is expanded, and a
+# placeholder left over is an error.
+render() {
+  python3 -I -c 'import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+for pair in sys.argv[3:]:
+    key, value = pair.split("=", 1)
+    text = text.replace("@" + key + "@", value)
+left = re.findall(r"@[A-Z_]+@", text)
+if left:
+    sys.exit(f"{sys.argv[1]}: unknown placeholder {left[0]}")
+open(sys.argv[2], "w", encoding="utf-8").write(text)' "$@"
+}
+
+# Site settings every server-side script reads (from site.conf in its staging directory).
+# WP_ALIASES: other names of the site (e.g. www.example.org), redirected to WP_HOST.
+site_conf() {
+  local wp_host mcp_host acme_email aliases alias
+  wp_host="$(setting WP_HOST)"
+  mcp_host="$(setting MCP_HOST)"
+  acme_email="$(setting ACME_EMAIL)"
+  aliases="$(setting WP_ALIASES)"
+  [[ "$wp_host" =~ $HOST_RE ]] || die "WP_HOST must be a lower-case host name, e.g. example.org"
+  [[ "$mcp_host" =~ $HOST_RE ]] || die "MCP_HOST must be a lower-case host name, e.g. mcp.example.org"
+  [[ "$mcp_host" != "$wp_host" ]] || die "MCP_HOST needs its own name, not the site's"
+  for alias in ${aliases//,/ }; do
+    [[ "$alias" =~ $HOST_RE ]] || die "WP_ALIASES: not a host name: $alias"
+  done
+  [[ -z "$acme_email" || "$acme_email" =~ ^[^[:space:]@\"\']+@[a-z0-9.-]+$ ]] ||
+    die "ACME_EMAIL is not an e-mail address"
+  printf 'PLATFORM=%s\nMCP_HOST=%s\nWP_HOST=%s\nWP_ALIASES=%s\nACME_EMAIL=%s\n' \
+    "$(site_platform)" "$mcp_host" "$wp_host" "${aliases//,/ }" "$acme_email"
 }
 
 # Set KEY=VALUE in .env (replace or append).

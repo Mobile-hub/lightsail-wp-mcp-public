@@ -43,6 +43,34 @@ variable "instance_state_path" {
   default     = "../instance/terraform.tfstate"
 }
 
+variable "records" {
+  description = "Other records (MX, TXT, CNAME, ...). TXT values are given without the quotes. A name/type given here replaces the mail stack's."
+  type = list(object({
+    name   = string
+    type   = string
+    values = list(string)
+    ttl    = optional(number)
+  }))
+  default = []
+
+  validation {
+    condition     = alltrue([for r in var.records : contains(["MX", "TXT", "CNAME", "CAA", "SRV"], r.type) && length(r.values) > 0])
+    error_message = "Record types: MX, TXT, CNAME, CAA or SRV (A and AAAA come from hosts), with at least one value."
+  }
+}
+
+variable "mail_state_path" {
+  description = "Local state file of the mail stack (infra/mail), whose dns_records output is added. null: none."
+  type        = string
+  default     = null
+}
+
+variable "allow_overwrite" {
+  description = "Take over records that already exist (e.g. created by hand) instead of failing."
+  type        = bool
+  default     = false
+}
+
 variable "ttl" {
   type    = number
   default = 300

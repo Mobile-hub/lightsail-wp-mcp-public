@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Prepares the server for the site and for wpmcp: runs deploy/setup.<PLATFORM>.sh as root.
+# Run it on a new server before bin/deploy, and again whenever you want (it is idempotent),
+# e.g. after the DNS switch of a migrated site, to replace the copied certificate.
+#
+#   bin/setup-server                            # settings from deploy/site.env
+#   SITE_ENV=/path/to/site.env bin/setup-server
+#
+#   debian   (Lightsail's own image) packages and security updates, a PHP with the 2026
+#            fixes, the site address, its vhosts, certificate and permalinks.
+#   bitnami  checks and hardens the PHP that serves the site (the certificate stays
+#            with Bitnami's bncert-tool).
+#
+# Settings: DEPLOY_SSH, DEPLOY_SSH_KEY, PLATFORM, WP_HOST, MCP_HOST, optional WP_ALIASES
+# and ACME_EMAIL.
+source "$(dirname "$0")/lib.sh"
+
+ssh_setup DEPLOY
+platform="$(site_platform)"
+site_conf >/dev/null
+wp_host="$(setting WP_HOST)"
+aliases="$(setting WP_ALIASES)"
+aliases="${aliases//,/ }"
+server_alias="# no other names"
+[[ -n "$aliases" ]] && server_alias="ServerAlias $aliases"
+
+stage="$ROOT/var/setup/stage"
+rm -rf "$stage" && mkdir -p "$stage/apache"
+cp "$ROOT/deploy/lib.remote.sh" "$stage/"
+cp "$ROOT/deploy/platform.$platform.sh" "$stage/platform.sh"
+cp "$ROOT/deploy/setup.$platform.sh" "$stage/setup.sh"
+for conf in "$ROOT/deploy/apache/$platform"/site-*.conf; do
+  [[ -e "$conf" ]] || continue
+  render "$conf" "$stage/apache/$(basename "$conf")" "WP_HOST=$wp_host" \
+    "WP_HOST_RE=${wp_host//./\\.}" "SERVER_ALIAS=$server_alias"
+done
+site_conf >"$stage/site.conf"
+info "setup of $ssh_target ($platform) for https://$wp_host"
+
+ship "$stage" setup.sh
+ok "server ready: next, bin/deploy (or bin/bootstrap-site for a fresh site first)"

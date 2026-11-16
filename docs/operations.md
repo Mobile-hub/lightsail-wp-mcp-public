@@ -1,19 +1,33 @@
 # Operations
 
 The service runs on the WordPress instance itself, at `https://<MCP_HOST>` (the host name
-set in the site file, see below). Two images are supported, detected by the installer
-(`deploy/platform.sh`): Lightsail's own WordPress image (`wordpress_ls_1_0`, Debian 12)
-and the Bitnami one. A new server can be created with the Terraform in `infra/`.
+set in the site file, see below). Two images are supported, named by `PLATFORM` in the
+site file (nothing is detected): `debian`, Lightsail's own WordPress image
+(`wordpress_ls_1_0`, Debian 12), and `bitnami`. Each has its own files in `deploy/`:
+`platform.<name>.sh` (paths and the commands that differ), `setup.<name>.sh` (what
+`bin/setup-server` runs) and `apache/<name>/`. A new server can be created with the
+Terraform in `infra/`, whose `platform` output is the value for the site file.
 
 ## A new server
 
-`infra/README.md`: Terraform for the instance and, optionally, the DNS records; then
-`bin/bootstrap-site` (Lightsail's own image only) gives the fresh site its address,
-certificate, permalinks, Polylang and languages, and `bin/deploy` installs wpmcp.
+`infra/README.md`: Terraform for the instance and, optionally, the DNS records. Then:
+
+1. `bin/setup-server` prepares the server. On `debian`: packages up to date and unattended
+   security updates, a patched PHP (it refuses one without the October 2026 fixes), the
+   site address fixed to `https://WP_HOST`, the site's vhosts, its certificate (`WP_HOST`
+   and `WP_ALIASES`) and permalink rules. On `bitnami` it checks and hardens the PHP that
+   serves the site; the certificate stays with Bitnami's `bncert-tool`.
+2. `bin/bootstrap-site`, for a fresh site only: Polylang, the languages of
+   `SITE_LANGUAGES`, All in One SEO, permalinks.
+3. `bin/deploy` installs wpmcp.
+
+`bin/setup-server` is idempotent; run it again whenever you like (for a migrated site,
+after the DNS switch, to replace the copied certificate with certbot's).
 
 ## An existing server
 
-`bin/inventory` prints a read-only report of the server (versions, Apache modules, PHP
+`bin/setup-server` first: it refuses to go on with an unpatched PHP. `bin/inventory`
+prints a read-only report of the server (versions, Apache modules, PHP
 limits, table charsets, plugins, REST namespaces, file modes, a kses audit). Keep its
 output outside the repository. Things worth checking before an assistant gets write
 access:
@@ -51,7 +65,8 @@ access:
 | `/etc/systemd/system/wpmcp-media.socket`, `wpmcp-media@.service` | Image worker: `/run/wpmcp-media.sock` (root:wpmcp 660), one sandboxed process per image, public network only; `wpmcp-media@.service.d/dns.conf` allows the DNS resolver |
 | Bitnami: `/opt/bitnami/apache/conf/vhosts/mcp-vhost.conf`, `mcp-https-vhost.conf`; Debian: `/etc/apache2/sites-available/wpmcp.conf`, `wpmcp-ssl.conf` | Apache: ACME + redirect on 80, TLS + proxy to the socket on 443 |
 | Bitnami: `/opt/bitnami/letsencrypt/certificates/<MCP_HOST>.*` (lego, `/etc/cron.d/wpmcp-cert`); Debian: `/etc/letsencrypt/live/<MCP_HOST>/` (certbot, its systemd timer) | The service's own certificate and its renewal |
-| Debian, from `bin/bootstrap-site`: `/etc/letsencrypt/live/<WP_HOST>/`, `default-ssl.conf`, `conf-available/wordpress-permalinks.conf` | The site's certificate, its HTTPS vhost, permalink rules |
+| Debian, from `bin/setup-server`: `/etc/letsencrypt/live/<WP_HOST>/`, `sites-available/wordpress.conf`, `wordpress-ssl.conf` (in place of the image's `000-default`, `default-ssl`), `conf-available/wordpress-permalinks.conf`, `/etc/php/<v>/apache2/conf.d/99-wpmcp.ini`, `/etc/apt/apt.conf.d/20auto-upgrades` | The site's certificate, vhosts, permalink rules, PHP hardening, security updates |
+| Bitnami, from `bin/setup-server`: `99-wpmcp.ini` in the ini directory of the PHP-FPM that Apache proxies to | PHP hardening |
 | `wp-content/mu-plugins/wpmcp-bridge*` | The bridge plugin, root-owned so PHP cannot modify it |
 | `wp-content/mu-plugins/*.php` from `EXTRA_MU_PLUGINS` | Optional site-specific mu-plugins, also root-owned |
 

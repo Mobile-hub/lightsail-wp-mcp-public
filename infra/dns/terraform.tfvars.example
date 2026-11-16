@@ -3,3 +3,10 @@ aws_profile = "dns-account"
 zone_name   = "example.org"
 hosts       = ["example.org", "mcp.example.org"]
 # ipv4/ipv6 default to the outputs of ../instance (local state).
+# Optional: the SES records of ../mail, and any other records.
+#mail_state_path = "../mail/terraform.tfstate"
+#records = [
+#  { name = "example.org", type = "TXT", values = ["v=spf1 include:amazonses.com ~all"] },
+#]
+# Optional: take over records made by hand (a migration's DNS switch); see main.tf.
+#allow_overwrite = true

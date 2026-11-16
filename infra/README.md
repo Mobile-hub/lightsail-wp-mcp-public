@@ -1,6 +1,6 @@
 # Infrastructure
 
-Terraform for a new WordPress server on AWS Lightsail, ready for `bin/bootstrap-site`
+Terraform for a new WordPress server on AWS Lightsail, ready for `bin/setup-server`
 and `bin/deploy`. Two independent stacks, so that the DNS zone can live in another AWS
 account (or elsewhere):
 
@@ -22,6 +22,7 @@ cp terraform.tfvars.example ~/my-site/instance.tfvars     # name, profile, key, 
 terraform init
 terraform apply -var-file=$HOME/my-site/instance.tfvars
 terraform output ssh_target                               # -> DEPLOY_SSH
+terraform output platform                                 # -> PLATFORM
 
 # 2. DNS for WP_HOST and MCP_HOST (optional stack; reads the addresses from step 1)
 cd ../dns
@@ -32,7 +33,8 @@ terraform apply -var-file=$HOME/my-site/dns.tfvars
 # 3. The site file (see deploy/site.env.example), then the software
 cd ../..
 ssh-keyscan "$(terraform -chdir=infra/instance output -raw ipv4)" > ~/my-site/known_hosts
-SITE_ENV=~/my-site/site.env bin/bootstrap-site   # address, certificate, Polylang, languages
+SITE_ENV=~/my-site/site.env bin/setup-server     # packages, patched PHP, address, certificate, vhosts
+SITE_ENV=~/my-site/site.env bin/bootstrap-site   # a fresh site: Polylang, languages
 SITE_ENV=~/my-site/site.env bin/deploy           # wpmcp, its certificate, the bridge
 ```
 
@@ -40,18 +42,23 @@ Check the host key that `ssh-keyscan` printed against the instance's console (or
 that first contact is trust on first use), and set `DEPLOY_KNOWN_HOSTS` in the site file
 to that file. Then follow `docs/operations.md` (owner password, clients).
 
-`bin/bootstrap-site` is only for a fresh instance of Lightsail's own image: it fixes the
-site address to `https://WP_HOST`, gets its certificate, puts the permalink rules in
-Apache's configuration (the image reads no `.htaccess`), and installs Polylang with the
-languages of `SITE_LANGUAGES`. Change the WordPress admin password afterwards: on this
-image the initial one is also the database password.
+On Lightsail's own image `bin/setup-server` updates the packages and turns on unattended
+security updates, refuses a PHP without the October 2026 fixes, fixes the site address to
+`https://WP_HOST`, installs the site's vhosts and gets its certificate, and puts the
+permalink rules in Apache's configuration (the image reads no `.htaccess`).
+`bin/bootstrap-site` is only for a fresh site: Polylang with the languages of
+`SITE_LANGUAGES`. Change the WordPress admin password afterwards: on this image the initial
+one is also the database password.
+
+SSH is open to `ssh_cidrs` and, unless `ssh_from_console = false`, to Lightsail's browser
+console, so that a changed home address does not lock you out.
 
 ## Images
 
-| `blueprint_id` | What | Supported by |
-|---|---|---|
-| `wordpress_ls_1_0` (default) | Lightsail's own image: Debian 12, Apache 2 + mod_php, MariaDB, WP-CLI, IMDSv2 | `bin/bootstrap-site`, `bin/deploy` |
-| `wordpress` | The Bitnami image | `bin/deploy` (set up the site's certificate with Bitnami's `bncert-tool` first) |
+| `blueprint_id` | `platform` | What | Notes |
+|---|---|---|---|
+| `wordpress_ls_1_0` (default) | `debian` | Lightsail's own image: Debian 12, Apache 2 + mod_php (Debian's PHP, updated by apt), MariaDB, WP-CLI, IMDSv2 | everything in `bin/` |
+| `wordpress` | `bitnami` | The Bitnami image | Bitnami's bundled PHP is not updated by apt (see AWS's PHP update guide); set up the site's certificate with `bncert-tool` |
 
 The instance ignores later changes of `blueprint_id`: moving a site to another image is a
 migration, not an apply.

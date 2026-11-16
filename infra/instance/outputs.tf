@@ -21,3 +21,8 @@ output "ssh_target" {
   description = "Value for DEPLOY_SSH in the site file."
   value       = "${aws_lightsail_instance.this.username}@${aws_lightsail_static_ip.this.ip_address}"
 }
+
+output "platform" {
+  description = "Value for PLATFORM in the site file."
+  value       = local.platform
+}

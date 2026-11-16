@@ -1,27 +1,20 @@
 #!/bin/bash
 # Runs ON THE SERVER, as root, from a staging directory prepared by bin/deploy:
 #   sudo bash remote-install.sh <staging dir>
-# Works on the Bitnami WordPress image and on Lightsail's own WordPress image (see
-# platform.sh). The WordPress site itself must already answer over HTTPS on WP_HOST (for a
-# fresh Lightsail image, run bin/bootstrap-site first).
+# The same for every platform: what differs is in platform.sh (a copy of
+# platform.<PLATFORM>.sh, chosen by bin/deploy from the site file). The WordPress site must
+# already answer over HTTPS on WP_HOST (bin/setup-server on a new server).
 # Idempotent. Each Apache change is syntax-checked and undone if the check fails; a new
 # release that does not answer its health check is rolled back to the previous one.
 # Prints no secrets.
 set -euo pipefail
 
-S="$(cd "$1" && pwd)"
-# Settings of this deployment, written by bin/deploy; checked again here.
-conf() { sed -n "s/^$1=//p" "$S/site.conf"; }
-MCP_HOST="$(conf MCP_HOST)"
-WP_HOST="$(conf WP_HOST)"
-ACME_EMAIL="$(conf ACME_EMAIL)"
-host_re='^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'
-[[ "$MCP_HOST" =~ $host_re && "$WP_HOST" =~ $host_re ]] || { echo "bad site.conf" >&2; exit 1; }
-[[ -z "$ACME_EMAIL" || "$ACME_EMAIL" =~ ^[^[:space:]@\"\']+@[a-z0-9.-]+$ ]] || { echo "bad ACME_EMAIL" >&2; exit 1; }
-# shellcheck source=deploy/platform.sh
+# shellcheck source=deploy/lib.remote.sh
+. "$(dirname "$0")/lib.remote.sh" "$1"
+# shellcheck source=deploy/platform.debian.sh
 . "$S/platform.sh"
+platform_check
 
-step() { printf '\n== %s\n' "$*"; }
 random() { head -c 64 /dev/urandom | base64 -w0 | tr -d '/+=' | cut -c1-"$1"; }
 echo "platform: $PLATFORM ($WP)"
 
@@ -126,38 +119,17 @@ else
 fi
 
 step "apache: plain HTTP vhost (ACME challenge, redirect)"
-if [[ "$PLATFORM" == debian ]]; then
-  a2enmod -q proxy proxy_http headers ssl rewrite >/dev/null
-  install -d -m 0755 -o root -g root "$ACME_WEBROOT"
-fi
-apache_apply "$S/apache/$VHOST_SRC_HTTP" "$VHOST_HTTP"
+apache_prepare
+apache_apply "$S/apache/mcp-http.conf" "$VHOST_HTTP"
 
 step "certificate for $MCP_HOST (separate from the site's)"
-if [[ ! -s "$MCP_CERT" ]]; then
-  if [[ "$PLATFORM" == bitnami ]]; then
-    # Reuse the existing Let's Encrypt account of this server (not printed).
-    email="$(find "$LE/accounts/acme-v02.api.letsencrypt.org/" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | head -1)"
-    [[ "$email" == *@* ]] || email="$ACME_EMAIL"
-    [[ "$email" == *@* ]] || { echo "no Let's Encrypt account found: set ACME_EMAIL" >&2; exit 1; }
-    "$LE/lego" --path "$LE" --email "$email" --accept-tos --http --http-timeout 30 \
-      --http.webroot "$ACME_WEBROOT" --domains="$MCP_HOST" --user-agent wpmcp run 2>&1 |
-      sed -E 's/[^ ]+@[^ ]+/<account>/g' | tail -5
-    umask 077
-    cat >/etc/cron.d/wpmcp-cert <<CRON
-# Renews the certificate of $MCP_HOST (installed by lightsail-wp-mcp).
-41 3 * * * root $LE/lego --path $LE --email $email --http --http-timeout 30 --http.webroot $ACME_WEBROOT --domains=$MCP_HOST --user-agent wpmcp renew --days 30 >/dev/null 2>&1 && chmod 600 $MCP_KEY && ${HTTPD[*]} -k graceful
-CRON
-    chmod 0600 /etc/cron.d/wpmcp-cert
-    umask 022
-  else
-    certbot_issue "$MCP_HOST" "$ACME_WEBROOT"
-  fi
-fi
+mcp_cert_issue
 chmod 0600 "$(readlink -f "$MCP_KEY")"
 openssl x509 -in "$MCP_CERT" -noout -subject -enddate
 
 step "apache: HTTPS vhost"
-apache_apply "$S/apache/$VHOST_SRC_HTTPS" "$VHOST_HTTPS"
+apache_apply "$S/apache/mcp-https.conf" "$VHOST_HTTPS"
+apache_reload   # a renewed certificate with an unchanged vhost
 
 step "checks over loopback"
 probe() { curl -s -o /dev/null -w "%{http_code}" --max-time 10 --resolve "$MCP_HOST:443:127.0.0.1" "$@"; }

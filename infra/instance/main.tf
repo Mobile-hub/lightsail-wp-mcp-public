@@ -1,10 +1,13 @@
 # One Lightsail WordPress instance for wpmcp: static IPv4, IPv6, firewall with SSH limited
-# to the given ranges, optional daily snapshots. The software is installed afterwards by
-# bin/bootstrap-site (a fresh site) and bin/deploy (wpmcp itself), not by user data, so
-# that both stay re-runnable and reviewable.
+# to the given ranges (and Lightsail's browser console), optional daily snapshots. The
+# software is installed afterwards by bin/setup-server, bin/migrate-site or
+# bin/bootstrap-site, and bin/deploy, not by user data, so that all stay re-runnable and
+# reviewable. The `platform` output is the PLATFORM of the site file.
 
 locals {
   az = coalesce(var.availability_zone, "${var.region}a")
+  # The PLATFORM of the site file: which deploy/platform.<name>.sh the server gets.
+  platform = { wordpress = "bitnami", wordpress_ls_1_0 = "debian" }[var.blueprint_id]
 }
 
 resource "aws_lightsail_key_pair" "this" {
@@ -54,6 +57,8 @@ resource "aws_lightsail_instance_public_ports" "this" {
     to_port    = 22
     cidrs      = var.ssh_cidrs
     ipv6_cidrs = var.ssh_ipv6_cidrs
+    # Lightsail's browser-based SSH: a way in when your own address has changed.
+    cidr_list_aliases = var.ssh_from_console ? ["lightsail-connect"] : []
   }
 
   port_info {

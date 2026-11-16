@@ -27,7 +27,7 @@ variable "availability_zone" {
 }
 
 variable "blueprint_id" {
-  description = "Lightsail blueprint. wordpress_ls_1_0 is Lightsail's own WordPress image; wordpress is the Bitnami one. deploy/remote-install.sh supports both."
+  description = "Lightsail blueprint: wordpress_ls_1_0 (Lightsail's own WordPress image, PLATFORM=debian) or wordpress (Bitnami, PLATFORM=bitnami)."
   type        = string
   default     = "wordpress_ls_1_0"
 
@@ -46,6 +46,12 @@ variable "bundle_id" {
 variable "ssh_public_key_path" {
   description = "Public key installed for SSH (imported as a Lightsail key pair). The private key never reaches Terraform."
   type        = string
+}
+
+variable "ssh_from_console" {
+  description = "Also allow SSH from Lightsail's browser console (the lightsail-connect range)."
+  type        = bool
+  default     = true
 }
 
 variable "ssh_cidrs" {

@@ -4,6 +4,27 @@ All notable changes are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break things).
 
+## [Unreleased]
+
+### Changed
+- **Breaking:** the site file must say `PLATFORM=debian` or `PLATFORM=bitnami`; nothing
+  is detected any more. Each platform has its own files: `deploy/platform.<name>.sh`,
+  `deploy/setup.<name>.sh` and `deploy/apache/<name>/`. Shared server code is in
+  `deploy/lib.remote.sh`. `infra/instance` outputs `platform`.
+- `bin/bootstrap-site` only bootstraps a fresh site's content (Polylang, languages) on
+  either platform; the server part moved to `bin/setup-server`.
+- `bin/inventory` takes its paths from the platform file, so it works on both images.
+
+### Added
+- `bin/setup-server`. On `debian`: packages up to date and unattended security updates;
+  the site's own vhosts (aliases from `WP_ALIASES` redirected, security headers) in place
+  of the image's defaults; certificates that can start as copies and are replaced by
+  certbot once the name points at the server. On both platforms: refuses a PHP without
+  the PHP2Shell fixes (CVE-2026-109618/109619) and turns `session.upload_progress` off
+  (CVE-2026-115560).
+- `infra/dns`: other records (`records`, or the mail stack's), `allow_overwrite` to take
+  over records made by hand. `infra/instance`: SSH from Lightsail's browser console.
+
 ## [0.4.0] - 2026-11-16
 
 ### Added

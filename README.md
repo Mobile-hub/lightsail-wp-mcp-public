@@ -52,7 +52,9 @@ deletes, files, WP-CLI, SQL or arbitrary URLs.
 
 - **Server:** an AWS Lightsail WordPress instance, either Lightsail's own image
   (`wordpress_ls_1_0`: Debian 12, Apache 2, MariaDB) or the Bitnami one. `infra/` creates a
-  new one with Terraform. Other layouts need `deploy/platform.sh` extended.
+  new one with Terraform. The site file's `PLATFORM` (`debian` or `bitnami`) picks the
+  matching `deploy/platform.<name>.sh` and `deploy/setup.<name>.sh`; nothing is detected.
+  Another layout is a new pair of those files.
 - **WordPress:** tested on 7.1 with **Polylang** 3.9 (free, required) and **All in One
   SEO** 5.0 (SEO fields are absent without it).
 - **A host name for the service** (for example `mcp.example.org`) pointing at the server.
@@ -80,14 +82,16 @@ A new server, from nothing ([`infra/README.md`](infra/README.md)):
 ```bash
 terraform -chdir=infra/instance apply -var-file=$HOME/my-site/instance.tfvars
 terraform -chdir=infra/dns apply -var-file=$HOME/my-site/dns.tfvars   # optional: Route 53 records
-SITE_ENV=$HOME/my-site/site.env bin/bootstrap-site                     # fresh Lightsail image only
+SITE_ENV=$HOME/my-site/site.env bin/setup-server                       # packages, PHP, TLS, vhosts
+SITE_ENV=$HOME/my-site/site.env bin/bootstrap-site                     # a fresh site: Polylang, languages
 SITE_ENV=$HOME/my-site/site.env bin/deploy
 ```
 
 An existing server:
 
 ```bash
-cp deploy/site.env.example deploy/site.env   # SSH target, MCP_HOST, WP_HOST, SITE_NAME
+cp deploy/site.env.example deploy/site.env   # PLATFORM, SSH target, MCP_HOST, WP_HOST, SITE_NAME
+bin/setup-server                             # checks (and on Bitnami hardens) the PHP serving the site
 bin/deploy
 ```
 
@@ -108,7 +112,9 @@ Site-specific read-only fields (for example the meta of your own plugin) can be 
 - `src/wpmcp/media/` — image checks and re-encoding, ChatGPT downloads, the image worker, upload links
 - `wordpress/mu-plugins/` — the bridge plugin (access rules, `wpmcp/v1` routes)
 - `infra/` — Terraform: Lightsail instance, optional Route 53 records
-- `deploy/`, `bin/deploy`, `bin/bootstrap-site` — systemd units, Apache vhosts, server install and site bootstrap
+- `deploy/`, `bin/setup-server`, `bin/deploy`, `bin/bootstrap-site` — per-platform files
+  (`platform.<name>.sh`, `setup.<name>.sh`, `apache/<name>/`), systemd units, the server
+  install and a fresh site's bootstrap
 - `dev/`, `bin/dev` — the local WordPress stack for integration tests
 - `docs/` — architecture, security model, operations, clients
 - `memory-bank/` — current state and working notes of the project
