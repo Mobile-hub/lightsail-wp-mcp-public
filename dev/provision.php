@@ -96,11 +96,51 @@ if ( ! $single ) {
 	pll_set_post_language( $single_id, 'en' );
 }
 
+// One menu per language on a "primary" location (Polylang's per-language assignment), with
+// a page link and Polylang's language switcher. Block themes register no locations, so the
+// assignment is written to Polylang's option directly, which is what the bridge reads.
+$menu_ids = array();
+foreach ( array( 'en', 'es' ) as $lang ) {
+	$name = "wpmcp dev menu $lang";
+	$menu = wp_get_nav_menu_object( $name );
+	if ( ! $menu ) {
+		$menu_id = wp_create_nav_menu( $name );
+		wp_update_nav_menu_item(
+			$menu_id,
+			0,
+			array(
+				'menu-item-type'      => 'post_type',
+				'menu-item-object'    => 'post',
+				'menu-item-object-id' => $post_ids[ $lang ],
+				'menu-item-status'    => 'publish',
+			)
+		);
+		$switcher = wp_update_nav_menu_item(
+			$menu_id,
+			0,
+			array(
+				'menu-item-type'   => 'custom',
+				'menu-item-object' => 'custom',
+				'menu-item-url'    => '#pll_switcher',
+				'menu-item-title'  => 'Languages',
+				'menu-item-status' => 'publish',
+			)
+		);
+		update_post_meta( $switcher, '_pll_menu_item', array( 'hide_if_no_translation' => 0, 'hide_current' => 0, 'force_home' => 0, 'show_flags' => 0, 'show_names' => 1, 'dropdown' => 0 ) );
+		$menu = wp_get_nav_menu_object( $menu_id );
+	}
+	$menu_ids[ $lang ] = (int) $menu->term_id;
+}
+$options = get_option( 'polylang' );
+$options['nav_menus'][ get_option( 'stylesheet' ) ]['primary'] = $menu_ids;
+update_option( 'polylang', $options );
+
 WP_CLI::success(
 	sprintf(
-		'languages: %s; categories: %s; posts: %s',
+		'languages: %s; categories: %s; posts: %s; menus: %s',
 		implode( ',', pll_languages_list() ),
 		wp_json_encode( $category_ids ),
-		wp_json_encode( $post_ids )
+		wp_json_encode( $post_ids ),
+		wp_json_encode( $menu_ids )
 	)
 );

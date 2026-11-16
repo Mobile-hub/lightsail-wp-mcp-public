@@ -18,9 +18,12 @@
 - 2026-11-16 — 0.4.0: `infra/` Terraform, Lightsail's own image, `bin/bootstrap-site`;
   tested end to end on a throwaway instance and destroyed.
 
+- 2026-11-16 — 0.5.0: phases 5 and 6 (live tools, menus, live budget, protected pages,
+  digest); one set of files per platform and `bin/setup-server`. 411 tests, 99% coverage.
+
 ## Not done
 - Connecting Claude.
-- Phases 5 and 6.
+- Deploying 0.5.0; trying the live tools against the real products.
 - Integration tests in CI.
 
 ## Known gaps

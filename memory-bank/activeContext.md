@@ -3,21 +3,25 @@
 _Updated 2026-11-16._
 
 ## Current focus
-Release 0.3.0 (bridge 0.4.0) prepares the repository for open source: the bridge has
-generic names (`wpmcp-bridge`, `wpmcp/v1`, `wpmcp_`, `WPMCP_BRIDGE_*`), site-specific
-fields come through the `wpmcp_bridge_extra_fields` filter (`extra` in `get_content`),
-and deployment settings live in a site file outside the repository (`deploy/site.env`
-or `SITE_ENV`) from which bin/deploy renders `wpmcp.env` and the Apache vhosts.
+Release 0.5.0 (bridge 0.5.0) completes the editing features: live tools (publish,
+schedule, unpublish, live edits with the prior state kept as a revision, restore
+revision, trash/untrash, link translations) and menus (apply/restore with saved
+versions), with a separate live budget, protected pages and an hourly digest e-mail.
+Tested against the local stack (411 tests, 99% coverage).
 
-Phase 4 (drafts, translations, SEO, categories, images) is complete and has run in
-production with ChatGPT. Claude has not been connected yet.
+Deployment is per platform with no detection: `PLATFORM` in the site file picks
+`deploy/platform.<name>.sh`, `deploy/setup.<name>.sh` and `deploy/apache/<name>/`;
+`bin/setup-server` prepares a server (patched-PHP gate for PHP2Shell, hardening ini, on
+Debian packages/unattended upgrades/vhosts/certificates); `bin/bootstrap-site` is only for
+a fresh site's content.
 
-Release 0.4.0 adds `infra/` (Terraform: Lightsail instance + optional Route 53 stack in
-any account), support for Lightsail's own WordPress image (`wordpress_ls_1_0`, Debian 12;
-`deploy/platform.sh` picks the image) and `bin/bootstrap-site` for a fresh site. Tested
-end to end on 2026-11-16 on a throwaway instance (create, DNS, bootstrap, deploy, tools
-through MCP over HTTPS, a draft in a second language, the version check, the upload link
-with EXIF/GPS removal, redeploy idempotent, no Terraform drift), then destroyed.
+Next in line: deploy 0.5.0 to a Bitnami server (test a throwaway instance first, since
+the Bitnami path changed), then migrate a Bitnami site to Lightsail's own image in
+another account (instance, SES mail stack, content migration, DNS cutover).
+
+Earlier: 0.3.0 made the repository generic for open source (bridge `wpmcp-bridge`,
+`wpmcp/v1`, `wpmcp_bridge_extra_fields`, site file); 0.4.0 added `infra/` and Lightsail's
+own image, tested end to end on a throwaway instance.
 
 ## Upgrading a deployment from 0.2.0
 The old bridge files (the previous plugin name) must be removed from
@@ -27,12 +31,18 @@ filter mu-plugin, deployed through `EXTRA_MU_PLUGINS`.
 
 ## Next
 - Connect Claude; check `deny_ip` lines, then CIDR `enforce`.
-- Phase 5: publish/schedule/unpublish/trash/restore, live edits, protected IDs, digest.
+- Deploy 0.5.0; a Bitnami throwaway test first.
+- `bin/migrate-site` and the `infra/mail` stack (SES), then a migration.
 - Dedicated `wpmcp_integration` role (see `docs/security.md`, planned).
 - Integration tests in CI (the stack runs under podman locally; docker needs
   `WPMCP_BRIDGE_ALLOWED_IPS` set to the bridge gateway).
 
 ## Decisions taken
+- 2026-11-16: no platform detection; the site file names the platform and each platform
+  has its own files. Menus are changed without `edit_theme_options`: the bridge checks the
+  menu (assigned to a location) and types the items itself. Live changes are separate
+  tools with their own budget; the model is told to use them only on the user's explicit
+  go-ahead, and the server enforces budget, protected pages, digest and undo paths.
 - 2026-11-16: new servers use Lightsail's own image by default; its quirks are handled in
   bootstrap-site (Host-derived address, no `.htaccess`, no Let's Encrypt client) rather
   than by enabling `.htaccess`. Software is installed by scripts, not Terraform user data,

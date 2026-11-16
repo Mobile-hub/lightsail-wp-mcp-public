@@ -126,6 +126,11 @@ class Settings:
     upload_ttl: int = 900
     # Write tool calls allowed per connection and hour (a runaway loop stops here).
     write_budget: int = 120
+    # Of those, calls that change what visitors see (publish, live edits, trash, menus).
+    live_budget: int = 30
+    # Posts and pages no tool may unpublish, trash or change once live (the bridge also
+    # protects the front, posts and privacy pages and their translations by itself).
+    protected_ids: frozenset[int] = frozenset()
 
     def __post_init__(self) -> None:
         if len(self.secret) < 32:
@@ -153,6 +158,8 @@ class Settings:
             raise ValueError(
                 "WPMCP_WRITE_BUDGET, WPMCP_UPLOAD_TTL or WPMCP_MEDIA_MAX_BYTES too low"
             )
+        if self.live_budget < 0:
+            raise ValueError("WPMCP_LIVE_BUDGET cannot be negative (0 turns live changes off)")
 
     def _check_wp(self) -> None:
         parts = urlsplit(self.wp_url)
@@ -215,5 +222,7 @@ class Settings:
             media_max_bytes=_int(env.get("WPMCP_MEDIA_MAX_BYTES"), cls.media_max_bytes),
             upload_ttl=_int(env.get("WPMCP_UPLOAD_TTL"), cls.upload_ttl),
             write_budget=_int(env.get("WPMCP_WRITE_BUDGET"), cls.write_budget),
+            live_budget=_int(env.get("WPMCP_LIVE_BUDGET"), cls.live_budget),
+            protected_ids=frozenset(int(v) for v in _list(env.get("WPMCP_PROTECTED_IDS"))),
             **extra,
         )

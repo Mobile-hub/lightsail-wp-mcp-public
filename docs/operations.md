@@ -122,9 +122,25 @@ subdomain), or remove the integration user's Application Password in WordPress.
 
 ## Limits
 
-`WPMCP_WRITE_BUDGET` (120 write calls per connection and hour), `WPMCP_MEDIA_MAX_BYTES`
-(10 MB per image; Apache allows 11 MB on `/upload/`), `WPMCP_UPLOAD_TTL` (900 s). Override them
-in the site file (`WPMCP_WRITE_BUDGET=60`) and deploy.
+`WPMCP_WRITE_BUDGET` (120 write calls per connection and hour), `WPMCP_LIVE_BUDGET` (of
+those, 30 that change what visitors see: publishing, live edits, trash, translation links,
+menus; 0 turns them off), `WPMCP_MEDIA_MAX_BYTES` (10 MB per image; Apache allows 11 MB on
+`/upload/`), `WPMCP_UPLOAD_TTL` (900 s). Override them in the site file
+(`WPMCP_WRITE_BUDGET=60`) and deploy.
+
+## Live changes
+
+- **Protected pages.** The front page, posts page and privacy policy page, with their
+  translations, are protected by the bridge. Add more with `WPMCP_PROTECTED_IDS=12,34` in
+  the site file (the service refuses them), or `WPMCP_BRIDGE_PROTECTED_IDS` in
+  `wp-config.php` (the bridge does).
+- **Digest.** Every live change is recorded (action, ID, time) and mailed to the site's
+  admin e-mail an hour after the first one (WP-Cron), with edit links. WordPress must be
+  able to send mail.
+- **Undo.** A live edit returns `before` (the revision with the old text, and the old
+  categories, image, slug and SEO); `restore_revision` puts text back; trashed items come
+  back as drafts; `restore_menu` restores the last saved version of a menu (5 are kept, in
+  the `wpmcp_menu_backups` option).
 
 Images are always new uploads; removing one is done in wp-admin (the tools never delete).
 

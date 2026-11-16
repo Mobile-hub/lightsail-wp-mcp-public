@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -58,6 +59,9 @@ def wp(password):
         "/wp/v2/themes",
         "/wp/v2/posts",
         "/wp/v2/comments",
+        "/wp/v2/menus",
+        "/wp/v2/menu-items",
+        "/wp/v2/menu-locations",
         "/aioseo/v1/htaccess",
         "/pll/v1/languages",
         "/",
@@ -374,3 +378,203 @@ def test_image_upload_and_details(writer, created):
     assert updated["caption"] == "Nova legenda"
     emoji = attempt(writer, "update_media", media_id=media["id"], alt_text="Capa 🐻")
     assert emoji["isError"] is True and "emoji" in str(emoji)
+
+
+# --- the live tools, end to end (phases 5 and 6). Items created here are deleted afterwards.
+
+
+def test_publish_schedule_unpublish_and_the_digest(writer, created):
+    draft = tool(writer, "create_draft", type="post", lang="en", title="wpmcp live test")
+    created["post"].append(draft["id"])
+    stale = attempt(writer, "publish_content", content_id=draft["id"], expected_version="0" * 16)
+    assert stale["isError"] is True and "changed since" in str(stale)
+
+    published = tool(
+        writer, "publish_content", content_id=draft["id"], expected_version=draft["version"]
+    )
+    assert published["status"] == "publish"
+    assert httpx.get(published["link"], follow_redirects=True, timeout=20).status_code == 200
+    again = attempt(
+        writer, "publish_content", content_id=draft["id"], expected_version=published["version"]
+    )
+    assert again["isError"] is True and "only drafts and pending" in str(again)
+
+    back = tool(
+        writer, "unpublish_content", content_id=draft["id"], expected_version=published["version"]
+    )
+    assert back["status"] == "draft"
+    assert httpx.get(f"{WP_URL}/?p={draft['id']}", timeout=20).status_code == 404
+
+    when = (datetime.now(UTC) + timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    scheduled = tool(
+        writer,
+        "schedule_content",
+        content_id=draft["id"],
+        expected_version=back["version"],
+        publish_at=when,
+    )
+    assert scheduled["status"] == "future" and scheduled["date_gmt"] == when
+
+    # Each live change is waiting for the owner's hourly e-mail (action and ID only).
+    log = subprocess.run(  # noqa: S603 - fixed command
+        [str(ROOT / "bin" / "dev"), "wp", "option", "get", "wpmcp_live_log", "--format=json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    actions = [e["action"] for e in json.loads(log) if e["id"] == draft["id"]]
+    assert actions[-3:] == ["published", "unpublished", "scheduled"]
+    assert "wpmcp live test" not in log
+
+
+def test_live_edit_keeps_a_revision_and_restores_it(writer, created):
+    draft = tool(
+        writer,
+        "create_draft",
+        type="post",
+        lang="en",
+        title="wpmcp live edit",
+        content="<p>One</p>",
+    )
+    created["post"].append(draft["id"])
+    live = tool(
+        writer, "publish_content", content_id=draft["id"], expected_version=draft["version"]
+    )
+    refused = attempt(
+        writer, "update_draft", content_id=draft["id"], expected_version=live["version"], title="x"
+    )
+    assert refused["isError"] is True
+
+    edited = tool(
+        writer,
+        "update_published_content",
+        content_id=draft["id"],
+        expected_version=live["version"],
+        content="<p>Two</p>",
+        seo={"title": "Edited SEO"},
+    )
+    assert edited["seo"]["title"] == "Edited SEO"
+    assert edited["before"]["revision_id"] and edited["before"]["seo"]["title"] is None
+    assert tool(writer, "get_content", content_id=draft["id"])["content"] == "<p>Two</p>"
+
+    restored = tool(
+        writer,
+        "restore_revision",
+        content_id=draft["id"],
+        expected_version=edited["version"],
+        revision_id=edited["before"]["revision_id"],
+    )
+    assert tool(writer, "get_content", content_id=draft["id"])["content"] == "<p>One</p>"
+    other = attempt(
+        writer,
+        "restore_revision",
+        content_id=draft["id"],
+        expected_version=restored["version"],
+        revision_id=1,
+    )
+    assert other["isError"] is True and "is not one of item" in str(other)
+
+
+def test_trash_and_restore(writer, created):
+    draft = tool(writer, "create_draft", type="page", lang="en", title="wpmcp trash test")
+    created["post"].append(draft["id"])
+    live = tool(
+        writer, "publish_content", content_id=draft["id"], expected_version=draft["version"]
+    )
+    trashed = tool(
+        writer, "trash_content", content_id=draft["id"], expected_version=live["version"]
+    )
+    assert trashed["status"] == "trash"
+    assert httpx.get(live["link"], timeout=20).status_code == 404
+    back = tool(writer, "restore_from_trash", content_id=draft["id"])
+    assert back["status"] == "draft"
+
+
+def test_protected_front_page(writer, created):
+    page = tool(writer, "create_draft", type="page", lang="en", title="wpmcp front page")
+    created["post"].append(page["id"])
+    live = tool(writer, "publish_content", content_id=page["id"], expected_version=page["version"])
+    dev_wp("option", "update", "page_on_front", str(page["id"]))
+    try:
+        for name in ("trash_content", "unpublish_content"):
+            refused = attempt(writer, name, content_id=page["id"], expected_version=live["version"])
+            assert refused["isError"] is True and "is protected" in str(refused), name
+    finally:
+        dev_wp("option", "update", "page_on_front", "0")
+
+
+def test_link_translations_merges_and_refuses_conflicts(writer, created):
+    english = tool(writer, "create_draft", type="post", lang="en", title="wpmcp link en")
+    spanish = tool(writer, "create_draft", type="post", lang="es", title="wpmcp link es")
+    other = tool(writer, "create_draft", type="post", lang="es", title="wpmcp link es 2")
+    created["post"] += [english["id"], spanish["id"], other["id"]]
+    linked = tool(
+        writer, "link_translations", translations={"en": english["id"], "es": spanish["id"]}
+    )
+    assert linked["translations"] == {"en": english["id"], "es": spanish["id"]}
+    conflict = attempt(
+        writer, "link_translations", translations={"en": english["id"], "es": other["id"]}
+    )
+    assert conflict["isError"] is True and "would be the es translation" in str(conflict)
+    wrong = attempt(
+        writer, "link_translations", translations={"pt": english["id"], "es": other["id"]}
+    )
+    assert wrong["isError"] is True and "is in en, not pt" in str(wrong)
+
+
+def test_menus_apply_and_restore(writer):
+    menus = tool(writer, "get_menus")["menus"]
+    spanish = next(m for m in menus if m["lang"] == "es")
+    kinds = [item["kind"] for item in spanish["items"]]
+    assert "language_switcher" in kinds
+    page_es = find_lang(writer, "es", "Principito")
+
+    applied = tool(
+        writer,
+        "apply_menu",
+        menu_id=spanish["menu_id"],
+        expected_version=spanish["version"],
+        items=[
+            {"kind": "post", "id": page_es["id"], "title": "Reseña"},
+            {"kind": "link", "url": "https://example.org/libros", "title": "Libros", "parent": 0},
+        ],
+    )
+    assert [i["kind"] for i in applied["items"]] == ["post", "link", "language_switcher"]
+    assert applied["items"][1]["parent"] == applied["items"][0]["id"]
+    assert any("language switcher was kept" in n for n in applied["notes"])
+
+    stale = attempt(
+        writer,
+        "apply_menu",
+        menu_id=spanish["menu_id"],
+        expected_version=spanish["version"],
+        items=[],
+    )
+    assert stale["isError"] is True and "changed since" in str(stale)
+    english_post = find(writer, "Little Prince")
+    wrong_lang = attempt(
+        writer,
+        "apply_menu",
+        menu_id=spanish["menu_id"],
+        expected_version=applied["version"],
+        items=[{"kind": "post", "id": english_post["id"]}],
+    )
+    assert wrong_lang["isError"] is True and "the menu is in es" in str(wrong_lang)
+    script = attempt(
+        writer,
+        "apply_menu",
+        menu_id=spanish["menu_id"],
+        expected_version=applied["version"],
+        items=[{"kind": "link", "url": "javascript:alert(1)", "title": "x"}],
+    )
+    assert script["isError"] is True and "https://" in str(script)
+    unknown = attempt(writer, "apply_menu", menu_id=999999, expected_version="0" * 16, items=[])
+    assert unknown["isError"] is True and "not shown by a theme location" in str(unknown)
+
+    restored = tool(writer, "restore_menu", menu_id=spanish["menu_id"])
+    assert [i["kind"] for i in restored["items"]] == kinds
+    assert restored["version"] == spanish["version"]
+
+
+def find_lang(mcp, lang, title):
+    return tool(mcp, "search_content", lang=lang, query=title)["items"][0]

@@ -100,6 +100,7 @@ function wpmcp_register_read_routes(): void {
 		)
 	);
 
+	// Defined in rest-menus.php, with the routes that change menus.
 	register_rest_route( WPMCP_BRIDGE_NS, '/menus', $read + array( 'callback' => 'wpmcp_rest_menus' ) );
 
 	register_rest_route(
@@ -342,48 +343,6 @@ function wpmcp_rest_media( WP_REST_Request $request ): array {
 	}
 	$query = new WP_Query( $args );
 	return wpmcp_paged( $query, array_map( 'wpmcp_media_summary', $query->posts ), (int) $request['page'], (int) $request['per_page'] );
-}
-
-function wpmcp_rest_menus(): array {
-	// Polylang keeps one menu per theme location and language; without it, core locations.
-	$assigned = array();
-	$options  = get_option( 'polylang' );
-	$theme    = get_option( 'stylesheet' );
-	if ( is_array( $options ) && isset( $options['nav_menus'][ $theme ] ) ) {
-		foreach ( $options['nav_menus'][ $theme ] as $location => $by_lang ) {
-			foreach ( (array) $by_lang as $lang => $menu_id ) {
-				$assigned[] = array( 'location' => $location, 'lang' => $lang, 'menu_id' => (int) $menu_id );
-			}
-		}
-	} else {
-		foreach ( get_nav_menu_locations() as $location => $menu_id ) {
-			$assigned[] = array( 'location' => $location, 'lang' => null, 'menu_id' => (int) $menu_id );
-		}
-	}
-
-	$menus = array();
-	foreach ( $assigned as $slot ) {
-		$menu = $slot['menu_id'] ? wp_get_nav_menu_object( $slot['menu_id'] ) : false;
-		if ( ! $menu ) {
-			$menus[] = $slot + array( 'name' => null, 'items' => array() );
-			continue;
-		}
-		$items = array();
-		foreach ( (array) wp_get_nav_menu_items( $menu->term_id ) as $item ) {
-			$items[] = array(
-				'id'        => (int) $item->ID,
-				'title'     => html_entity_decode( wp_strip_all_tags( $item->title ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ),
-				'url'       => $item->url,
-				'type'      => $item->type,
-				'object'    => $item->object,
-				'object_id' => (int) $item->object_id,
-				'parent'    => $item->menu_item_parent ? (int) $item->menu_item_parent : null,
-				'order'     => (int) $item->menu_order,
-			);
-		}
-		$menus[] = $slot + array( 'name' => $menu->name, 'items' => $items );
-	}
-	return array( 'theme' => $theme, 'menus' => $menus );
 }
 
 function wpmcp_rest_changes( WP_REST_Request $request ) {

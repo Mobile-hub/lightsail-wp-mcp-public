@@ -31,8 +31,8 @@ model, and expect to adapt the deployment to your server.
 | 2 | WordPress bridge plugin, local stack, read tools | done |
 | 3 | Production, read-only | done; verified with ChatGPT, Claude not yet |
 | 4 | Drafts, translations, SEO, categories, images | done |
-| 5 | Publishing and other live operations | planned |
-| 6 | Menus | planned |
+| 5 | Publishing and other live operations | done |
+| 6 | Menus | done |
 
 Read tools (`wp:read`): `get_connection_info`, `get_site_overview`, `search_content` (by
 language, status, category, missing translations), `get_content` (body, SEO, site-specific
@@ -44,6 +44,14 @@ language, optionally linked as a translation, with categories, featured image an
 `update_draft` (drafts and pending items only, against the `version` read),
 `create_category`, `import_image` (ChatGPT files), `request_image_upload` (single-use
 upload link, any client), `update_media` (title, alt text, caption).
+
+Live tools (`wp:write`), which change what visitors see, each against the `version` read
+and undoable: `publish_content`, `schedule_content`, `unpublish_content`,
+`update_published_content` (the state before is kept as a revision), `restore_revision`,
+`trash_content` and `restore_from_trash` (never a permanent delete), `link_translations`,
+`apply_menu` and `restore_menu` (menus shown by a theme location; the last 5 versions are
+kept). They have their own hourly budget, protected pages, and an hourly digest e-mail to
+the site's admin address.
 
 Never exposed: users, plugins, themes, options, comments, permanent deletes, media
 deletes, files, WP-CLI, SQL or arbitrary URLs.

@@ -13,8 +13,11 @@ Unix socket behind the existing Apache, on its own subdomain:
 State is one SQLite file (`auth/store.py`). The service reaches WordPress over HTTPS on
 loopback as a least-privilege user, only through the `wpmcp/v1` routes of the bridge
 mu-plugin (`wordpress/mu-plugins/`), which add what core REST lacks: languages and
-translation links (Polylang), SEO fields (All in One SEO), drafts-only writes, and a
-filter (`wpmcp_bridge_extra_fields`) through which a site adds its own read-only fields.
+translation links (Polylang), SEO fields (All in One SEO), drafts (`rest-write.php`), live
+changes with their safety nets (`rest-live.php`: protected pages, revisions kept, trash
+only, the change log and its hourly digest), menus (`rest-menus.php`: typed items, saved
+versions), and a filter (`wpmcp_bridge_extra_fields`) through which a site adds its own
+read-only fields.
 
 Images take a separate path. The service never decodes them: it hands the bytes (or, for
 ChatGPT files, the download URL) to the image worker over a Unix socket. systemd starts one
@@ -36,10 +39,12 @@ ChatGPT / Claude ──HTTPS──▶ Apache ──unix──▶ wpmcp serve ─
    puts the `Principal` in the ASGI scope and strips `Authorization`, `Cookie` and `Origin`.
 3. The MCP transport checks `Host` and parses the message.
 4. `WpMcp.call_tool` checks the tool's scope against the principal, refuses unknown
-   arguments, spends one unit of the connection's hourly write budget for write tools,
-   writes the audit line, and runs the tool.
+   arguments, spends one unit of the connection's hourly write budget for write tools
+   (and of the lower live budget for tools that change what visitors see), writes the
+   audit line, and runs the tool.
 5. A write tool calls a bridge route; the bridge applies WordPress capabilities, the
-   drafts-only rules and the version check, and answers with the saved item.
+   status rules (drafts only, or live only), the protected pages and the version check,
+   and answers with the saved item.
 
 ## Decisions
 

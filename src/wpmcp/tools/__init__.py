@@ -27,6 +27,8 @@ class ToolSpec:
     destructive: bool = False
     # Reaches beyond the WordPress site itself.
     open_world: bool = False
+    # Changes what visitors see: counts against the live budget too.
+    live: bool = False
     meta: dict[str, Any] = field(default_factory=dict)
 
     @property

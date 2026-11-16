@@ -1,0 +1,386 @@
+<?php
+/**
+ * Navigation menus: read (GET /menus, registered in rest-read.php), replace and restore.
+ *
+ * Only menus assigned to a theme location (per language with Polylang) can be changed,
+ * and never which menu a location shows. A change replaces the menu's items with the list
+ * given, after saving the current items (the last 5 versions per menu); restore puts the
+ * latest saved version back. Items are typed: a published post or page, a category (both
+ * in the menu's language), an https or site-relative link, or an existing item kept as it
+ * is (how Polylang's language switcher, or any item of another kind, stays). A language
+ * switcher left out is put back at the end.
+ *
+ * None of this needs edit_theme_options: the routes check the menu themselves and build
+ * the items with core's nav menu functions, which do not depend on that capability.
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+const WPMCP_BRIDGE_MENU_BACKUPS    = 'wpmcp_menu_backups';
+const WPMCP_BRIDGE_MENU_KEEP       = 5;
+const WPMCP_BRIDGE_MENU_MAX_ITEMS  = 60;
+const WPMCP_BRIDGE_PLL_SWITCHER    = '#pll_switcher';
+const WPMCP_BRIDGE_ITEM_META_KEEP  = array( '_pll_menu_item' );
+
+add_action( 'rest_api_init', 'wpmcp_register_menu_routes' );
+
+function wpmcp_register_menu_routes(): void {
+	$menu_id = array( 'type' => 'integer', 'minimum' => 1, 'required' => true );
+	register_rest_route(
+		WPMCP_BRIDGE_NS,
+		'/menus/(?P<menu_id>\d+)',
+		array(
+			'methods'             => 'POST',
+			'callback'            => 'wpmcp_rest_menu_apply',
+			'permission_callback' => 'wpmcp_can_read',
+			'args'                => array(
+				'menu_id'          => $menu_id,
+				'expected_version' => array( 'type' => 'string', 'pattern' => '^[0-9a-f]{16}$', 'required' => true ),
+				'items'            => array(
+					'type'     => 'array',
+					'required' => true,
+					'maxItems' => WPMCP_BRIDGE_MENU_MAX_ITEMS,
+					'items'    => array(
+						'type'                 => 'object',
+						'additionalProperties' => false,
+						'required'             => array( 'kind' ),
+						'properties'           => array(
+							'kind'    => array( 'type' => 'string', 'enum' => array( 'post', 'page', 'category', 'link', 'keep' ) ),
+							'id'      => array( 'type' => 'integer', 'minimum' => 1 ),
+							'url'     => array( 'type' => 'string', 'maxLength' => 500 ),
+							'title'   => array( 'type' => 'string', 'maxLength' => 200 ),
+							'parent'  => array( 'type' => array( 'integer', 'null' ), 'minimum' => 0 ),
+						),
+					),
+				),
+			),
+		)
+	);
+	register_rest_route(
+		WPMCP_BRIDGE_NS,
+		'/menus/(?P<menu_id>\d+)/restore',
+		array(
+			'methods'             => 'POST',
+			'callback'            => 'wpmcp_rest_menu_restore',
+			'permission_callback' => 'wpmcp_can_read',
+			'args'                => array( 'menu_id' => $menu_id ),
+		)
+	);
+}
+
+// ----------------------------------------------------------------------------- read
+
+/** Menus shown by a theme location: location, language (with Polylang) and menu ID. */
+function wpmcp_assigned_menus(): array {
+	$assigned = array();
+	$options  = get_option( 'polylang' );
+	$theme    = get_option( 'stylesheet' );
+	if ( is_array( $options ) && isset( $options['nav_menus'][ $theme ] ) ) {
+		foreach ( $options['nav_menus'][ $theme ] as $location => $by_lang ) {
+			foreach ( (array) $by_lang as $lang => $menu_id ) {
+				$assigned[] = array( 'location' => $location, 'lang' => $lang, 'menu_id' => (int) $menu_id );
+			}
+		}
+	} else {
+		foreach ( get_nav_menu_locations() as $location => $menu_id ) {
+			$assigned[] = array( 'location' => $location, 'lang' => null, 'menu_id' => (int) $menu_id );
+		}
+	}
+	return $assigned;
+}
+
+/** What kind of item this is, in the terms apply_menu uses. */
+function wpmcp_menu_item_kind( WP_Post $item ): string {
+	if ( 'custom' === $item->type ) {
+		return WPMCP_BRIDGE_PLL_SWITCHER === $item->url ? 'language_switcher' : 'link';
+	}
+	if ( 'post_type' === $item->type && in_array( $item->object, WPMCP_BRIDGE_TYPES, true ) ) {
+		return $item->object;
+	}
+	if ( 'taxonomy' === $item->type && 'category' === $item->object ) {
+		return 'category';
+	}
+	return 'other';
+}
+
+/** The items of a menu, in order, with parents as item IDs. */
+function wpmcp_menu_items( int $menu_id ): array {
+	$items = array();
+	foreach ( (array) wp_get_nav_menu_items( $menu_id, array( 'post_status' => 'any' ) ) as $item ) {
+		$kind    = wpmcp_menu_item_kind( $item );
+		$items[] = array(
+			'id'        => (int) $item->ID,
+			'kind'      => $kind,
+			'title'     => html_entity_decode( wp_strip_all_tags( $item->title ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ),
+			'url'       => $item->url,
+			// A link's object is the item itself: no object to point at.
+			'object_id' => 'custom' === $item->type ? null : (int) $item->object_id,
+			'parent'    => $item->menu_item_parent ? (int) $item->menu_item_parent : null,
+			'order'     => (int) $item->menu_order,
+		);
+	}
+	return $items;
+}
+
+/** Fingerprint of a menu's items; parents by position, since a restore gives new item IDs. */
+function wpmcp_menu_version( array $items ): string {
+	$position = array_flip( array_column( $items, 'id' ) );
+	$state    = array_map(
+		static fn ( $i ) => array( $i['kind'], $i['object_id'], $i['url'], $i['title'], null === $i['parent'] ? null : ( $position[ $i['parent'] ] ?? -1 ) ),
+		$items
+	);
+	return substr( hash( 'sha256', wp_json_encode( $state ) ), 0, 16 );
+}
+
+function wpmcp_rest_menus(): array {
+	$menus = array();
+	foreach ( wpmcp_assigned_menus() as $slot ) {
+		$menu = $slot['menu_id'] ? wp_get_nav_menu_object( $slot['menu_id'] ) : false;
+		if ( ! $menu ) {
+			$menus[] = $slot + array( 'name' => null, 'items' => array() );
+			continue;
+		}
+		$items   = wpmcp_menu_items( $menu->term_id );
+		$backups = get_option( WPMCP_BRIDGE_MENU_BACKUPS, array() );
+		$menus[] = $slot + array(
+			'name'            => $menu->name,
+			'items'           => $items,
+			'version'         => wpmcp_menu_version( $items ),
+			'saved_versions'  => is_array( $backups ) ? count( $backups[ $menu->term_id ] ?? array() ) : 0,
+		);
+	}
+	return array( 'theme' => get_option( 'stylesheet' ), 'menus' => $menus );
+}
+
+// ---------------------------------------------------------------------------- write
+
+/** The location slot of an assigned menu, or an error for any other menu. */
+function wpmcp_menu_slot( int $menu_id ) {
+	foreach ( wpmcp_assigned_menus() as $slot ) {
+		if ( $slot['menu_id'] === $menu_id && wp_get_nav_menu_object( $menu_id ) ) {
+			return $slot;
+		}
+	}
+	return wpmcp_error( 'wpmcp_bad_menu', "Menu $menu_id is not shown by a theme location (see get_menus): only those can be changed.", 404 );
+}
+
+/** Full copy of an existing item, enough to create it again. */
+function wpmcp_menu_item_spec( WP_Post $item ): array {
+	$meta = array();
+	foreach ( WPMCP_BRIDGE_ITEM_META_KEEP as $key ) {
+		$value = get_post_meta( $item->ID, $key, true );
+		if ( '' !== $value ) {
+			$meta[ $key ] = $value;
+		}
+	}
+	return array(
+		'data' => array(
+			'menu-item-type'        => $item->type,
+			'menu-item-object'      => $item->object,
+			'menu-item-object-id'   => (int) $item->object_id,
+			'menu-item-url'         => $item->url,
+			'menu-item-title'       => $item->post_title,
+			'menu-item-attr-title'  => $item->attr_title,
+			'menu-item-description' => $item->description,
+			'menu-item-classes'     => implode( ' ', (array) $item->classes ),
+			'menu-item-xfn'         => $item->xfn,
+			'menu-item-target'      => $item->target,
+			'menu-item-status'      => 'publish',
+		),
+		'meta' => $meta,
+	);
+}
+
+/** The current items as specs with parents as list indexes (what a backup holds). */
+function wpmcp_menu_snapshot( int $menu_id ): array {
+	$specs = array();
+	$index = array();
+	foreach ( (array) wp_get_nav_menu_items( $menu_id, array( 'post_status' => 'any' ) ) as $position => $item ) {
+		$index[ (int) $item->ID ] = $position;
+		$spec                     = wpmcp_menu_item_spec( $item );
+		$spec['parent']           = $item->menu_item_parent ? ( $index[ (int) $item->menu_item_parent ] ?? null ) : null;
+		$specs[]                  = $spec;
+	}
+	return $specs;
+}
+
+/** Specs for the requested items, checked; or an error naming the first bad one. */
+function wpmcp_menu_requested_specs( array $requested, int $menu_id, ?string $lang ) {
+	$existing = array();
+	foreach ( (array) wp_get_nav_menu_items( $menu_id, array( 'post_status' => 'any' ) ) as $item ) {
+		$existing[ (int) $item->ID ] = $item;
+	}
+	$specs    = array();
+	$switcher = false;
+	foreach ( array_values( $requested ) as $n => $wanted ) {
+		$at    = 'Item ' . ( $n + 1 );
+		$kind  = (string) $wanted['kind'];
+		$title = isset( $wanted['title'] ) ? trim( (string) $wanted['title'] ) : '';
+		$spec  = null;
+		if ( 'keep' === $kind ) {
+			$item = $existing[ (int) ( $wanted['id'] ?? 0 ) ] ?? null;
+			if ( ! $item ) {
+				return wpmcp_error( 'wpmcp_bad_menu_item', "$at: keep needs the id of an item of this menu (see get_menus)." );
+			}
+			$spec     = wpmcp_menu_item_spec( $item );
+			$switcher = $switcher || WPMCP_BRIDGE_PLL_SWITCHER === $item->url;
+			if ( '' !== $title ) {
+				$spec['data']['menu-item-title'] = $title;
+			}
+		} elseif ( in_array( $kind, array( 'post', 'page' ), true ) ) {
+			$post = get_post( (int) ( $wanted['id'] ?? 0 ) );
+			if ( ! $post || $post->post_type !== $kind || 'publish' !== $post->post_status ) {
+				return wpmcp_error( 'wpmcp_bad_menu_item', "$at: no published $kind with ID " . (int) ( $wanted['id'] ?? 0 ) . '.' );
+			}
+			if ( $lang && wpmcp_post_lang( $post->ID ) !== $lang ) {
+				return wpmcp_error( 'wpmcp_bad_menu_item', "$at: {$post->ID} is in " . ( wpmcp_post_lang( $post->ID ) ?? 'no language' ) . ", the menu is in $lang." );
+			}
+			$spec = array(
+				'data' => array(
+					'menu-item-type'      => 'post_type',
+					'menu-item-object'    => $kind,
+					'menu-item-object-id' => $post->ID,
+					'menu-item-title'     => $title,
+					'menu-item-status'    => 'publish',
+				),
+				'meta' => array(),
+			);
+		} elseif ( 'category' === $kind ) {
+			$term = get_term( (int) ( $wanted['id'] ?? 0 ), 'category' );
+			if ( ! $term instanceof WP_Term ) {
+				return wpmcp_error( 'wpmcp_bad_menu_item', "$at: no category with ID " . (int) ( $wanted['id'] ?? 0 ) . '.' );
+			}
+			if ( $lang && wpmcp_term_lang( $term->term_id ) !== $lang ) {
+				return wpmcp_error( 'wpmcp_bad_menu_item', "$at: category {$term->term_id} is not in $lang." );
+			}
+			$spec = array(
+				'data' => array(
+					'menu-item-type'      => 'taxonomy',
+					'menu-item-object'    => 'category',
+					'menu-item-object-id' => $term->term_id,
+					'menu-item-title'     => $title,
+					'menu-item-status'    => 'publish',
+				),
+				'meta' => array(),
+			);
+		} else { // link
+			$url = trim( (string) ( $wanted['url'] ?? '' ) );
+			if ( ! preg_match( '#^(https://[^\s/]+(/\S*)?|/\S*)$#', $url ) || WPMCP_BRIDGE_PLL_SWITCHER === $url ) {
+				return wpmcp_error( 'wpmcp_bad_menu_item', "$at: a link needs an https:// or site-relative (/...) url." );
+			}
+			if ( '' === $title ) {
+				return wpmcp_error( 'wpmcp_bad_menu_item', "$at: a link needs a title." );
+			}
+			$spec = array(
+				'data' => array(
+					'menu-item-type'   => 'custom',
+					'menu-item-object' => 'custom',
+					'menu-item-url'    => esc_url_raw( $url ),
+					'menu-item-title'  => $title,
+					'menu-item-status' => 'publish',
+				),
+				'meta' => array(),
+			);
+		}
+		$parent = $wanted['parent'] ?? null;
+		if ( null !== $parent && ( (int) $parent >= $n ) ) {
+			return wpmcp_error( 'wpmcp_bad_menu_item', "$at: parent must be the position (from 0) of an earlier item." );
+		}
+		$spec['parent'] = null === $parent ? null : (int) $parent;
+		$specs[]        = $spec;
+	}
+	$notes = array();
+	if ( ! $switcher ) {
+		foreach ( $existing as $item ) {
+			if ( WPMCP_BRIDGE_PLL_SWITCHER === $item->url ) {
+				$specs[] = wpmcp_menu_item_spec( $item ) + array( 'parent' => null );
+				$notes[] = 'The language switcher was kept, at the end of the menu.';
+				break;
+			}
+		}
+	}
+	return array( $specs, $notes );
+}
+
+/** Replaces every item of the menu with $specs (parents as indexes into $specs). */
+function wpmcp_menu_replace( int $menu_id, array $specs ): void {
+	foreach ( (array) wp_get_nav_menu_items( $menu_id, array( 'post_status' => 'any' ) ) as $item ) {
+		wp_delete_post( $item->ID, true ); // a menu item, not content: the menu was saved first
+	}
+	$created = array();
+	foreach ( $specs as $position => $spec ) {
+		$data                          = $spec['data'];
+		$data['menu-item-position']    = $position + 1;
+		$data['menu-item-parent-id']   = null === $spec['parent'] ? 0 : ( $created[ $spec['parent'] ] ?? 0 );
+		$id                            = wp_update_nav_menu_item( $menu_id, 0, $data );
+		$created[ $position ]          = is_wp_error( $id ) ? 0 : (int) $id;
+		foreach ( $spec['meta'] as $key => $value ) {
+			if ( $created[ $position ] ) {
+				update_post_meta( $created[ $position ], $key, $value );
+			}
+		}
+	}
+	wp_cache_delete( $menu_id, 'nav_menu' );
+}
+
+function wpmcp_menu_result( array $slot, array $notes = array() ): array {
+	$items   = wpmcp_menu_items( $slot['menu_id'] );
+	$backups = get_option( WPMCP_BRIDGE_MENU_BACKUPS, array() );
+	$result  = $slot + array(
+		'name'           => wp_get_nav_menu_object( $slot['menu_id'] )->name,
+		'items'          => $items,
+		'version'        => wpmcp_menu_version( $items ),
+		'saved_versions' => is_array( $backups ) ? count( $backups[ $slot['menu_id'] ] ?? array() ) : 0,
+	);
+	if ( $notes ) {
+		$result['notes'] = $notes;
+	}
+	return $result;
+}
+
+function wpmcp_rest_menu_apply( WP_REST_Request $request ) {
+	$menu_id = (int) $request['menu_id'];
+	$slot    = wpmcp_menu_slot( $menu_id );
+	if ( is_wp_error( $slot ) ) {
+		return $slot;
+	}
+	if ( ! hash_equals( wpmcp_menu_version( wpmcp_menu_items( $menu_id ) ), (string) $request['expected_version'] ) ) {
+		return wpmcp_error( 'wpmcp_stale', "Menu $menu_id changed since that version was read. Read it again with get_menus.", 409 );
+	}
+	$checked = wpmcp_menu_requested_specs( (array) $request['items'], $menu_id, $slot['lang'] );
+	if ( is_wp_error( $checked ) ) {
+		return $checked;
+	}
+	list( $specs, $notes ) = $checked;
+
+	$backups               = get_option( WPMCP_BRIDGE_MENU_BACKUPS, array() );
+	$backups               = is_array( $backups ) ? $backups : array();
+	$saved                 = $backups[ $menu_id ] ?? array();
+	array_unshift( $saved, array( 'time' => time(), 'items' => wpmcp_menu_snapshot( $menu_id ) ) );
+	$backups[ $menu_id ] = array_slice( $saved, 0, WPMCP_BRIDGE_MENU_KEEP );
+	update_option( WPMCP_BRIDGE_MENU_BACKUPS, $backups, false );
+
+	wpmcp_menu_replace( $menu_id, $specs );
+	wpmcp_live_record( 'changed menu', $menu_id );
+	$notes[] = 'The previous version was saved: restore_menu puts it back.';
+	return wpmcp_menu_result( $slot, $notes );
+}
+
+function wpmcp_rest_menu_restore( WP_REST_Request $request ) {
+	$menu_id = (int) $request['menu_id'];
+	$slot    = wpmcp_menu_slot( $menu_id );
+	if ( is_wp_error( $slot ) ) {
+		return $slot;
+	}
+	$backups = get_option( WPMCP_BRIDGE_MENU_BACKUPS, array() );
+	$saved   = is_array( $backups ) ? ( $backups[ $menu_id ] ?? array() ) : array();
+	if ( ! $saved ) {
+		return wpmcp_error( 'wpmcp_no_backup', "There is no saved version of menu $menu_id.", 404 );
+	}
+	$latest              = array_shift( $saved );
+	$backups[ $menu_id ] = $saved;
+	update_option( WPMCP_BRIDGE_MENU_BACKUPS, $backups, false );
+	wpmcp_menu_replace( $menu_id, $latest['items'] );
+	wpmcp_live_record( 'restored menu', $menu_id );
+	return wpmcp_menu_result( $slot, array( 'Restored the version saved at ' . gmdate( 'Y-m-d H:i', (int) $latest['time'] ) . ' UTC.' ) );
+}

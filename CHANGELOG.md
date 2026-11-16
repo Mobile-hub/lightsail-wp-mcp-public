@@ -4,7 +4,24 @@ All notable changes are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break things).
 
-## [Unreleased]
+## [0.5.0] - 2026-11-16
+
+### Added
+- Live tools (phase 5): `publish_content`, `schedule_content`, `unpublish_content`,
+  `update_published_content`, `restore_revision`, `trash_content`, `restore_from_trash`,
+  `link_translations`. Each change names the version it was based on and is refused while
+  the editor is open; the state before a live edit or restore is saved as a revision and
+  returned; trash only. Protected pages: front, posts and privacy pages and their
+  translations, plus `WPMCP_PROTECTED_IDS` / `WPMCP_BRIDGE_PROTECTED_IDS`.
+- Menus (phase 6): `apply_menu` and `restore_menu` for menus shown by a theme location,
+  with typed items, the language switcher kept, and the last 5 versions saved. No
+  `edit_theme_options` for the integration user. `get_menus` returns `version` and item
+  kinds.
+- A separate hourly budget for live changes (`WPMCP_LIVE_BUDGET`, 30) and an hourly
+  digest e-mail of live changes to the site's admin address.
+
+### Fixed
+- Grant IDs never start with `-`, which `wpmcp-admin grant revoke` read as an option.
 
 ### Changed
 - **Breaking:** the site file must say `PLATFORM=debian` or `PLATFORM=bitnami`; nothing

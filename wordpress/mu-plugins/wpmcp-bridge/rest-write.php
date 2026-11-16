@@ -5,7 +5,7 @@
  * Nothing here changes what visitors see. New posts and pages are always drafts; only
  * drafts and pending items can be edited; a draft linked as a translation stays out of
  * the language switcher and hreflang until it is published (Polylang lists only the
- * translations a visitor can read). Publishing is a separate, later step.
+ * translations a visitor can read). Publishing and live edits are in rest-live.php.
  *
  * Images are shared by every language (Polylang media support is off), so editing an
  * image's alt text or caption shows wherever it is used.
@@ -27,13 +27,11 @@ const WPMCP_BRIDGE_IMAGE_MIMES = array(
 
 add_action( 'rest_api_init', 'wpmcp_register_write_routes' );
 
-function wpmcp_register_write_routes(): void {
-	$text      = static fn ( int $max ) => array( 'type' => 'string', 'maxLength' => $max );
-	$nullable  = static fn ( int $max ) => array( 'type' => array( 'string', 'null' ), 'maxLength' => $max );
-	$id        = array( 'type' => 'integer', 'minimum' => 1, 'required' => true );
-	$lang      = array( 'type' => 'string', 'pattern' => '^[a-z]{2,3}$', 'required' => true );
-	$reference = array( 'type' => 'integer', 'minimum' => 1 );
-	$fields    = array(
+/** The editable fields of a post or page, as REST argument schemas. */
+function wpmcp_content_field_args(): array {
+	$text     = static fn ( int $max ) => array( 'type' => 'string', 'maxLength' => $max );
+	$nullable = static fn ( int $max ) => array( 'type' => array( 'string', 'null' ), 'maxLength' => $max );
+	return array(
 		'title'          => $text( 500 ),
 		'content'        => $text( 1000000 ),
 		'excerpt'        => $text( 5000 ),
@@ -58,6 +56,14 @@ function wpmcp_register_write_routes(): void {
 			),
 		),
 	);
+}
+
+function wpmcp_register_write_routes(): void {
+	$text      = static fn ( int $max ) => array( 'type' => 'string', 'maxLength' => $max );
+	$id        = array( 'type' => 'integer', 'minimum' => 1, 'required' => true );
+	$lang      = array( 'type' => 'string', 'pattern' => '^[a-z]{2,3}$', 'required' => true );
+	$reference = array( 'type' => 'integer', 'minimum' => 1 );
+	$fields    = wpmcp_content_field_args();
 
 	register_rest_route(
 		WPMCP_BRIDGE_NS,
@@ -442,13 +448,25 @@ function wpmcp_rest_content_create( WP_REST_Request $request ) {
 }
 
 function wpmcp_rest_content_update( WP_REST_Request $request ) {
-	$blocked = wpmcp_writes_blocked();
-	if ( $blocked ) {
-		return $blocked;
-	}
 	$post = get_post( (int) $request['id'] );
 	if ( ! in_array( $post->post_status, WPMCP_BRIDGE_EDITABLE, true ) ) {
 		return wpmcp_error( 'wpmcp_not_draft', "Item {$post->ID} is {$post->post_status}: only drafts and pending items can be changed with this tool.", 409 );
+	}
+	$guard = wpmcp_edit_guard( $post, $request );
+	if ( $guard ) {
+		return $guard;
+	}
+	return wpmcp_apply_content_update( $post, $request );
+}
+
+/**
+ * What every change to an existing item checks first: Polylang synchronisation off, the
+ * version the caller read is still the current one, nobody has it open in the editor.
+ */
+function wpmcp_edit_guard( WP_Post $post, WP_REST_Request $request ): ?WP_Error {
+	$blocked = wpmcp_writes_blocked();
+	if ( $blocked ) {
+		return $blocked;
 	}
 	if ( ! hash_equals( wpmcp_content_version( $post, wpmcp_seo( $post->ID ) ), (string) $request['expected_version'] ) ) {
 		return wpmcp_error(
@@ -463,6 +481,11 @@ function wpmcp_rest_content_update( WP_REST_Request $request ) {
 	if ( wp_check_post_lock( $post->ID ) ) {
 		return wpmcp_error( 'wpmcp_locked', "Someone has item {$post->ID} open in the editor. Try again when they have finished.", 409 );
 	}
+	return null;
+}
+
+/** The fields of update_draft (and update_published_content), after the guard. */
+function wpmcp_apply_content_update( WP_Post $post, WP_REST_Request $request, array $notes = array() ) {
 	$seo   = (array) ( $request['seo'] ?? array() );
 	$check = wpmcp_check_text( wpmcp_seo_texts( $seo ) );
 	if ( $check ) {
@@ -522,7 +545,6 @@ function wpmcp_rest_content_update( WP_REST_Request $request ) {
 	if ( null !== $featured ) {
 		$featured ? set_post_thumbnail( $post->ID, $featured ) : delete_post_thumbnail( $post->ID );
 	}
-	$notes     = array();
 	$seo_error = wpmcp_save_seo( $post->ID, $seo );
 	if ( $seo_error ) {
 		$notes[] = $seo_error->get_error_message();

@@ -48,8 +48,10 @@ function wpmcp_allowed_ips(): array {
 /**
  * Every capability the integration user has. Content and media editing, categories;
  * nothing that changes users, plugins, themes, options or comments, and no unfiltered_html
- * (so everything it saves goes through kses). Menus (edit_theme_options) come in a later
- * release, behind their own routes.
+ * (so everything it saves goes through kses). No edit_theme_options either: the menu
+ * routes (rest-menus.php) check the menu themselves, so the Customizer, widgets and theme
+ * settings stay out of reach. The delete_* capabilities are what core asks for to trash;
+ * the routes never delete permanently.
  */
 function wpmcp_capabilities(): array {
 	return array(

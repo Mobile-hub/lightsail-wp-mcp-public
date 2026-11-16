@@ -23,10 +23,15 @@ Sections marked **planned** describe controls that are designed but not built ye
 | Spoofed `X-Forwarded-For` | Only the last hop, only from the local proxy; uvicorn's own proxy handling is off | `net.py`, `cli.py` |
 | Request floods and oversized bodies | Per-address rate limits; body caps on every route | `app.py`, `auth/bearer.py` |
 | A manipulated model asks for something dangerous | No generic tools; users, plugins, themes, options, deletes and code are not reachable at all | `tools/` |
-| A model writes something visitors see | Write tools create drafts only and edit only drafts and pending items; a draft linked as a translation stays out of the language switcher and hreflang until published (Polylang shows only translations the visitor can read); publishing does not exist yet | `rest-write.php`, `tools/write.py` |
+| A model writes something visitors see | Draft tools create drafts and edit only drafts and pending items; a draft linked as a translation stays out of the language switcher and hreflang until published (Polylang shows only translations the visitor can read). Live changes are separate tools, marked destructive (except publish and schedule) so clients ask first, and the server instructions tell the model to use them only on the user's explicit go-ahead | `rest-write.php`, `rest-live.php`, `tools/` |
+| A live change goes wrong (publish, edit, trash, menu) | Every one is undoable: the state before a live edit or a restore is saved as a revision (and returned with the old categories, image, slug and SEO); trash only, never a permanent delete; untrash gives a draft; the last 5 versions of each menu are kept for `restore_menu` | `rest-live.php`, `rest-menus.php` |
+| A runaway or manipulated model changes the live site in bulk | A second, lower budget for live changes per connection and hour (`WPMCP_LIVE_BUDGET`, 30; 0 turns them off); the site's admin e-mail gets an hourly digest of every live change (action, ID, time, edit link; no content) | `mcp_server.py`, `rest-live.php` |
+| Key pages are unpublished, trashed or rewritten | The front page, posts page and privacy policy page, their translations, `WPMCP_BRIDGE_PROTECTED_IDS` (wp-config) and `WPMCP_PROTECTED_IDS` (service) cannot be unpublished, trashed, edited live or relinked through the tools | `rest-live.php`, `tools/live.py` |
+| Menus are used to reach theme settings | Only menus a theme location shows can be changed, never which menu a location shows; items are typed (published post or page, category in the menu's language, https or site-relative link, an existing item kept); no `edit_theme_options`, so the Customizer, widgets and theme options stay out of reach | `rest-menus.php` |
+| Translation links are corrupted | `link_translations` keeps existing links, checks each item's language, and refuses two items for one language | `rest-live.php` |
 | A tool argument the model believes was applied (`status="publish"`) | Unknown arguments are refused for every tool instead of silently dropped | `mcp_server.py` |
 | A runaway loop of changes | Write budget per connection and hour (`WPMCP_WRITE_BUDGET`, 120); reads continue | `mcp_server.py` |
-| Two edits of the same draft overwrite each other | `update_draft` needs the `version` it was based on (a fingerprint of every editable field, since `post_modified` has one-second resolution and SEO edits do not touch it); refused while someone has the editor open | `rest-write.php` |
+| Two edits of the same item overwrite each other | Every change to an existing item or menu needs the `version` it was based on (a fingerprint of every editable field, since `post_modified` has one-second resolution and SEO edits do not touch it); refused while someone has the editor open | `rest-write.php`, `rest-live.php`, `rest-menus.php` |
 | Saving a draft changes its published translations | Writes are refused while Polylang synchronisation is enabled | `rest-write.php` |
 | Script or markup injection in content | The integration user has no `unfiltered_html`: WordPress's kses filter applies, and the tool tells the model when it changed the content | `access.php`, `rest-write.php` |
 | A malicious image (decoder exploit, decompression bomb, polyglot, hidden payload) | Size and header pixel caps before decoding; decoder restricted to the sniffed format; every image re-encoded from its pixels (metadata such as GPS positions removed); all of it in the image worker, not in the service | `media/images.py`, `media/worker.py` |
@@ -35,7 +40,7 @@ Sections marked **planned** describe controls that are designed but not built ye
 | Clickjacking or script injection on the consent page | `frame-ancestors 'none'`, `default-src 'none'`, escaped output, `no-store` | `app.py`, `auth/pages.py` |
 | A compromised dependency | Hash-pinned lock, `--require-hashes` install | `uv.lock`, `deploy/requirements.txt` |
 | The WordPress credential is stolen | Accepted only from loopback, only for the integration user; that user cannot log in, reset its password or reach any REST route outside `wpmcp/v1` | `wordpress/mu-plugins/wpmcp-bridge/access.php` |
-| WordPress grants the integration user more than intended (roles, other plugins) | Its capabilities are a fixed list that replaces the role's; no `unfiltered_html`, options, users, plugins, themes, menus or SEO admin | `access.php` |
+| WordPress grants the integration user more than intended (roles, other plugins) | Its capabilities are a fixed list that replaces the role's; no `unfiltered_html`, options, users, plugins, themes, `edit_theme_options` or SEO admin | `access.php` |
 | An admin's Application Password, which would skip the 2FA login | Only the integration user may use Application Passwords | `access.php` |
 | The bridge plugin is modified through PHP | Installed root-owned; the web server user cannot write it | `deploy/remote-install.sh` |
 | The service is compromised | systemd sandbox: own user, network to loopback only, read-only system, no access to WordPress files, TLS keys, the database or home directories, no capabilities, syscall filter, 256 MB memory cap; it never decodes an image | `deploy/systemd/wpmcp.service` |
@@ -53,13 +58,10 @@ Sections marked **planned** describe controls that are designed but not built ye
 - `wpmcp client disable <client_id>` blocks a client and revokes its connections.
 - Rotating the signing secret invalidates every access token and pending consent request.
 
-## Planned (phases 5 and 6)
+## Planned
 
 - A dedicated `wpmcp_integration` role with only the listed capabilities, so the user stays
   narrow even if the bridge plugin were removed (today its stored role is `editor`).
-- Publishing, unpublishing and trash (never permanent delete), revisions with a restore
-  tool, a journal of the previous state of terms, translation links and menus.
-- A list of protected pages, and a digest e-mail of publications and trashes.
 
 ## Accepted risks
 
@@ -69,7 +71,13 @@ Sections marked **planned** describe controls that are designed but not built ye
   manipulated model can still edit, publish or trash content; revisions, the trash and
   server snapshots are the recovery path.
 - **The clients' confirmation prompts can be switched off** by the user in Claude or
-  ChatGPT. They are a brake, not a control this server enforces.
+  ChatGPT. They are a brake, not a control this server enforces. The same holds for the
+  "explicit go-ahead" in the server instructions: advice to the model, while the budget,
+  the protected pages, the digest and the undo paths are what the server enforces.
+- **Menu changes delete the old menu items** (nav_menu_item posts, not content) after
+  saving them; only the last 5 versions of each menu can be restored with the tool.
+- **The digest e-mail depends on WordPress being able to send mail** and on WP-Cron
+  (visitor-triggered unless a system cron runs it).
 - **Images are shared by every language and post.** `update_media` changes alt text and
   captions wherever the image appears, published posts included; it is marked
   destructive so clients ask first. Uploads only add new images, never replace one.
