@@ -4,6 +4,7 @@
 # shellcheck shell=bash disable=SC2034  # the variables are used by the scripts that source this
 
 WP=/opt/bitnami/wordpress
+WP_CONFIG="$WP/wp-config.php"
 WEB_GROUP=daemon                                 # Apache and PHP-FPM run as daemon
 HTTPD=(/opt/bitnami/apache/bin/httpd -f /opt/bitnami/apache/conf/httpd.conf)
 LE=/opt/bitnami/letsencrypt
@@ -16,6 +17,9 @@ VHOST_HTTP=/opt/bitnami/apache/conf/vhosts/mcp-vhost.conf
 VHOST_HTTPS=/opt/bitnami/apache/conf/vhosts/mcp-https-vhost.conf
 # Apache's PHP handler: the FPM socket it proxies to is the PHP that serves the site.
 FPM_PROXY_CONF=/opt/bitnami/apache/conf/bitnami/php-fpm.conf
+
+# cert_files <host>: certificate (with its chain) and key of a name, as this server keeps them.
+cert_files() { echo "$LE/certificates/$1.crt" "$LE/certificates/$1.key"; }
 
 platform_check() {
   [[ -d "$WP" && -x "${HTTPD[0]}" ]] ||

@@ -15,9 +15,17 @@ Deployment is per platform with no detection: `PLATFORM` in the site file picks
 Debian packages/unattended upgrades/vhosts/certificates); `bin/bootstrap-site` is only for
 a fresh site's content.
 
-Next in line: deploy 0.5.0 to a Bitnami server (test a throwaway instance first, since
-the Bitnami path changed), then migrate a Bitnami site to Lightsail's own image in
-another account (instance, SES mail stack, content migration, DNS cutover).
+Since 0.5.0 (unreleased): `bin/migrate-site` (no code carried over; database and media
+only; credentials and sessions ended; certificates copied for testing before the DNS
+switch), `infra/mail` + `bin/mail-credentials` (SES via WP Mail SMTP's free SMTP mailer,
+constants outside the database), Apache hardening on Lightsail's own image. Rehearsed on
+2026-11-16: a real Bitnami site copied to Lightsail's own image with matching counts and
+pages; the Bitnami path was tested on a throwaway instance and 0.5.0 deployed on Bitnami.
+
+Lessons from real servers: fresh Bitnami images ship an unpatched PHP (8.4.20 in
+November 2026), no python3-venv, and no lego/ACME webroot until bncert-tool runs; a rewrite
+flush without plugins loses Polylang's language prefixes; a new IAM key needs up to a
+minute before SES SMTP accepts it.
 
 Earlier: 0.3.0 made the repository generic for open source (bridge `wpmcp-bridge`,
 `wpmcp/v1`, `wpmcp_bridge_extra_fields`, site file); 0.4.0 added `infra/` and Lightsail's
@@ -31,8 +39,7 @@ filter mu-plugin, deployed through `EXTRA_MU_PLUGINS`.
 
 ## Next
 - Connect Claude; check `deny_ip` lines, then CIDR `enforce`.
-- Deploy 0.5.0; a Bitnami throwaway test first.
-- `bin/migrate-site` and the `infra/mail` stack (SES), then a migration.
+- Release the migration and mail tooling (0.6.0) after a real DNS switch.
 - Dedicated `wpmcp_integration` role (see `docs/security.md`, planned).
 - Integration tests in CI (the stack runs under podman locally; docker needs
   `WPMCP_BRIDGE_ALLOWED_IPS` set to the bridge gateway).

@@ -58,13 +58,14 @@ site_platform() {
   printf '%s' "$platform"
 }
 
-# ssh_setup [PREFIX]: the target and ssh options from <PREFIX>_SSH, <PREFIX>_SSH_KEY and
-# <PREFIX>_KNOWN_HOSTS (default DEPLOY_*), into the globals ssh_target and ssh_args.
+# ssh_setup PREFIX [FALLBACK]: the target and ssh options from <PREFIX>_SSH,
+# <PREFIX>_SSH_KEY and <PREFIX>_KNOWN_HOSTS (each unset one from <FALLBACK>_*), into the
+# globals ssh_target and ssh_args.
 ssh_setup() {
-  local prefix="${1:-DEPLOY}" key known
-  ssh_target="$(setting "${prefix}_SSH" "$(setting DEPLOY_SSH)")"
-  key="$(setting "${prefix}_SSH_KEY" "$(setting DEPLOY_SSH_KEY)")"
-  known="$(setting "${prefix}_KNOWN_HOSTS" "$(setting DEPLOY_KNOWN_HOSTS)")"
+  local prefix="$1" fallback="${2:-$1}" key known
+  ssh_target="$(setting "${prefix}_SSH" "$(setting "${fallback}_SSH")")"
+  key="$(setting "${prefix}_SSH_KEY" "$(setting "${fallback}_SSH_KEY")")"
+  known="$(setting "${prefix}_KNOWN_HOSTS" "$(setting "${fallback}_KNOWN_HOSTS")")"
   [[ -n "$ssh_target" ]] || die "set ${prefix}_SSH (user@host) in $SITE_ENV"
   [[ -z "$key" || -r "$key" ]] || die "cannot read ${prefix}_SSH_KEY: $key"
   ssh_args=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes)

@@ -95,6 +95,10 @@ SITE_ENV=$HOME/my-site/site.env bin/bootstrap-site                     # a fresh
 SITE_ENV=$HOME/my-site/site.env bin/deploy
 ```
 
+Moving a site to a new server (only the database and media are copied; code comes again
+from wordpress.org), and outgoing mail through Amazon SES: `bin/migrate-site`,
+`infra/mail` and `bin/mail-credentials`, in [`docs/operations.md`](docs/operations.md).
+
 An existing server:
 
 ```bash

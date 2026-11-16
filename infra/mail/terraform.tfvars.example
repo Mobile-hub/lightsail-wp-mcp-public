@@ -1,0 +1,5 @@
+# Copy outside the repository and pass with -var-file=/path/to/mail.tfvars.
+aws_profile    = "my-site-account"
+region         = "eu-west-1"
+domain         = "example.org"
+from_addresses = ["noreply@example.org"]

@@ -16,12 +16,13 @@ variable "zone_name" {
 }
 
 variable "hosts" {
-  description = "Names to point at the instance: the WordPress site (WP_HOST) and the service (MCP_HOST), both inside zone_name."
+  description = "Names to point at the instance: the WordPress site (WP_HOST, its aliases) and the service (MCP_HOST), inside zone_name. Empty: only the other records (e.g. mail before a migration's DNS switch)."
   type        = list(string)
+  default     = []
 
   validation {
-    condition     = length(var.hosts) > 0 && alltrue([for h in var.hosts : can(regex("^[a-z0-9.-]+$", h))])
-    error_message = "List at least one lower-case host name."
+    condition     = alltrue([for h in var.hosts : can(regex("^[a-z0-9.-]+$", h))])
+    error_message = "Lower-case host names."
   }
 }
 

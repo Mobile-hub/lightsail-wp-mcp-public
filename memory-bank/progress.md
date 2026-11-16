@@ -21,6 +21,9 @@
 - 2026-11-16 — 0.5.0: phases 5 and 6 (live tools, menus, live budget, protected pages,
   digest); one set of files per platform and `bin/setup-server`. 411 tests, 99% coverage.
 
+- 2026-11-16 — Unreleased: `bin/migrate-site`, `infra/mail`, `bin/mail-credentials`,
+  Apache hardening; rehearsed on a real site.
+
 ## Not done
 - Connecting Claude.
 - Deploying 0.5.0; trying the live tools against the real products.

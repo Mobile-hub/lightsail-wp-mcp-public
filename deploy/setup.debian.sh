@@ -58,8 +58,7 @@ fi
 served_php_reload
 
 step "site address: https://$WP_HOST"
-config=/var/www/wp-config.php
-[[ -f "$config" ]] || config="$WP/wp-config.php"
+config="$WP_CONFIG"
 # Only the two address lines (and WP-CLI's stand-in host) change; the file keeps its owner
 # and mode because it is rewritten in place.
 WP_HOST="$WP_HOST" python3 -I - "$config" "$tmp" <<'PY'
@@ -97,6 +96,25 @@ cat >"$tmp" <<CONF
 </Directory>
 CONF
 apache_apply "$tmp" /etc/apache2/conf-available/wordpress-permalinks.conf
+cat >"$tmp" <<CONF
+# WordPress hardening (written by lightsail-wp-mcp setup.debian.sh).
+ServerTokens Prod
+ServerSignature Off
+<Directory $WP>
+  # XML-RPC (password guessing, pingback abuse) and files that tell the version.
+  <FilesMatch "^(xmlrpc\.php|readme\.html|license\.txt|wp-config-sample\.php)\$">
+    Require all denied
+  </FilesMatch>
+</Directory>
+# Uploads are data: nothing in them runs as PHP, even if a plugin lets a .php through.
+<Directory $WP/wp-content/uploads>
+  php_admin_flag engine off
+  <FilesMatch "\.(php[0-9]?|phtml|phar)\$">
+    Require all denied
+  </FilesMatch>
+</Directory>
+CONF
+apache_apply "$tmp" /etc/apache2/conf-available/wordpress-hardening.conf
 apache_apply "$S/apache/site-http.conf" /etc/apache2/sites-available/wordpress.conf
 # The image's defaults give way to the site's vhosts once these are in place.
 disable_default() {

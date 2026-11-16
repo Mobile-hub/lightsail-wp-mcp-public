@@ -18,5 +18,6 @@ updates:
     directories:
       - "/infra/instance"
       - "/infra/dns"
+      - "/infra/mail"
     schedule:
       interval: "weekly"

@@ -19,14 +19,14 @@ data "terraform_remote_state" "mail" {
 }
 
 data "terraform_remote_state" "instance" {
-  count   = var.ipv4 == null || var.ipv6 == null ? 1 : 0
+  count   = length(var.hosts) > 0 && (var.ipv4 == null || var.ipv6 == null) ? 1 : 0
   backend = "local"
   config  = { path = var.instance_state_path }
 }
 
 locals {
   zone = trimsuffix(data.aws_route53_zone.this.name, ".")
-  ipv4 = coalesce(var.ipv4, try(data.terraform_remote_state.instance[0].outputs.ipv4, null))
+  ipv4 = length(var.hosts) == 0 ? null : coalesce(var.ipv4, try(data.terraform_remote_state.instance[0].outputs.ipv4, null))
   ipv6 = var.ipv6 != null ? var.ipv6 : try(data.terraform_remote_state.instance[0].outputs.ipv6, "")
   # null from the instance stack (no IPv6) behaves like "".
   aaaa  = local.ipv6 == null ? "" : local.ipv6

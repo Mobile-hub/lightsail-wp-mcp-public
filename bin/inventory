@@ -10,7 +10,7 @@
 # server.
 source "$(dirname "$0")/lib.sh"
 
-ssh_setup INVENTORY
+ssh_setup INVENTORY DEPLOY
 platform="$(site_platform)"
 
 # The platform's file (paths, wp, and its apache/php/tls sections) and then the common

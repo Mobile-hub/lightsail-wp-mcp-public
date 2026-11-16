@@ -5,6 +5,7 @@
 # shellcheck shell=bash disable=SC2034  # the variables are used by the scripts that source this
 
 WP=/var/www/html
+WP_CONFIG=/var/www/wp-config.php                # outside the web root on this image
 WEB_GROUP=www-data
 ACME_WEBROOT=/var/lib/wpmcp-acme                 # root-owned, outside the web root
 MCP_CERT="/etc/letsencrypt/live/${MCP_HOST:-}/fullchain.pem"
@@ -13,6 +14,9 @@ MCP_KEY="/etc/letsencrypt/live/${MCP_HOST:-}/privkey.pem"
 # the default for any other name; wpmcp*.conf answer only for MCP_HOST.
 VHOST_HTTP=/etc/apache2/sites-available/wpmcp.conf
 VHOST_HTTPS=/etc/apache2/sites-available/wpmcp-ssl.conf
+
+# cert_files <host>: certificate (with its chain) and key of a name, as this server keeps them.
+cert_files() { echo "/etc/letsencrypt/live/$1/fullchain.pem" "/etc/letsencrypt/live/$1/privkey.pem"; }
 
 platform_check() {
   [[ -f "$WP/wp-load.php" && -x /usr/sbin/apache2ctl && ! -d /opt/bitnami ]] ||

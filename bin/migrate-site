@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# Copies a WordPress site from the server it runs on (SOURCE_*) to a new one (DEPLOY_*,
+# prepared with bin/setup-server), without carrying code over: core, plugins and themes are
+# installed again from wordpress.org at the source's versions; only the database, the media
+# library (minus any code in it) and, until the DNS switch, the current certificates are
+# copied. Data streams source -> this machine -> target, never stored here.
+#
+#   SITE_ENV=/path/to/new-site.env bin/migrate-site
+#
+# Run it once to rehearse (the source keeps serving), and again for the final copy right
+# before the DNS switch: each run replaces the target's database and media. The source is
+# only read (a staging directory in its /run is removed at the end).
+#
+# Settings (besides the target's DEPLOY_*, PLATFORM, WP_HOST, MCP_HOST):
+#   SOURCE_SSH, SOURCE_SSH_KEY, SOURCE_KNOWN_HOSTS, SOURCE_PLATFORM   the current server
+#   MIGRATE_SKIP_PLUGINS        plugin slugs not to carry over (space separated)
+#   MIGRATE_SKIP_TABLES         tables not to copy, as a regular expression (ERE)
+#   MIGRATE_DELETE_POST_TYPES   post types whose items are deleted on the target
+#   EXTRA_PLUGINS               a directory of reviewed plugin directories for plugins that
+#                               are not on wordpress.org (installed root-owned)
+#   MIGRATE_CERTS=0             do not copy the certificates
+# Afterwards: bin/setup-server (puts a copied certificate on the site's vhost), bin/deploy.
+source "$(dirname "$0")/lib.sh"
+
+ssh_setup SOURCE
+src_target="$ssh_target" src_args=("${ssh_args[@]}")
+src_platform="$(setting SOURCE_PLATFORM)"
+[[ "$src_platform" == bitnami || "$src_platform" == debian ]] || die "set SOURCE_PLATFORM=bitnami or debian"
+ssh_setup DEPLOY
+dst_target="$ssh_target" dst_args=("${ssh_args[@]}")
+dst_platform="$(site_platform)"
+[[ "$src_target" != "$dst_target" ]] || die "SOURCE_SSH and DEPLOY_SSH are the same server"
+site_conf >/dev/null
+extra_plugins="$(setting EXTRA_PLUGINS)"
+[[ -z "$extra_plugins" || -d "$extra_plugins" ]] || die "EXTRA_PLUGINS is not a directory: $extra_plugins"
+
+work="$ROOT/var/migrate"
+rm -rf "$work" && mkdir -p "$work/source" "$work/target/plugins"
+chmod 700 "$work"
+for side in source target; do
+  cp "$ROOT/deploy/lib.remote.sh" "$ROOT/deploy/migrate.sh" "$work/$side/"
+done
+cp "$ROOT/deploy/platform.$src_platform.sh" "$work/source/platform.sh"
+cp "$ROOT/deploy/platform.$dst_platform.sh" "$work/target/platform.sh"
+migrate_conf() {
+  site_conf | sed "s/^PLATFORM=.*/PLATFORM=$2/"
+  printf 'ROLE=%s\nMIGRATE_SKIP_TABLES=%s\nMIGRATE_SKIP_PLUGINS=%s\nMIGRATE_DELETE_POST_TYPES=%s\n' "$1" \
+    "$(setting MIGRATE_SKIP_TABLES)" "$(setting MIGRATE_SKIP_PLUGINS)" "$(setting MIGRATE_DELETE_POST_TYPES)"
+}
+migrate_conf source "$src_platform" >"$work/source/site.conf"
+migrate_conf target "$dst_platform" >"$work/target/site.conf"
+if [[ -n "$extra_plugins" ]]; then
+  find "$extra_plugins" -mindepth 1 -maxdepth 1 -type d -exec cp -r {} "$work/target/plugins/" \;
+fi
+
+R=/run/wpmcp-migrate
+# remote <source|target> <command>: a shell command on that server (expanded here on purpose).
+# shellcheck disable=SC2029
+remote() {
+  case "$1" in
+    source) ssh "${src_args[@]}" "$src_target" "$2" ;;
+    target) ssh "${dst_args[@]}" "$dst_target" "$2" ;;
+  esac
+}
+# put <source|target>: the staging directory, root only, in tmpfs.
+put() { tar -C "$work/$1" -cz . | remote "$1" "sudo -n bash -c 'rm -rf $R && install -d -m 0700 $R && tar -C $R -xz'"; }
+# on <source|target> <command>: a migrate.sh command there (stdin/stdout are data).
+on() { remote "$1" "sudo -n bash $R/migrate.sh $R $2"; }
+cleanup() { for side in source target; do remote "$side" "sudo -n rm -rf $R" 2>/dev/null || true; done; }
+trap cleanup EXIT
+
+info "source $src_target ($src_platform) -> target $dst_target ($dst_platform)"
+put source
+on source inventory >"$work/source.json"
+python3 -I - "$work/source.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+print(f"   WordPress {d['wordpress']} at {d['home']}, prefix {d['prefix']}, {len(d['tables'])} tables")
+print("   plugins:", ", ".join(f"{p['slug']} {p['version']}" + ("" if p["active"] else " (inactive)") for p in d["plugins"]))
+print("   theme:", d["stylesheet"], "| must-use:", ", ".join(d["mu_plugins"]) or "-", "| drop-ins:", ", ".join(d["dropins"]) or "-")
+PY
+cp "$work/source.json" "$work/target/source.json"
+put target
+
+info "target: core, plugins, themes"
+on target prepare
+
+info "database"
+# MariaDB 11.4 collations do not exist in 10.11; utf8mb3 tables become utf8mb4 (emoji).
+# Only table definitions change, never rows.
+on source dump | python3 -I -c '
+import re, sys
+ddl = [
+    (re.compile(r"utf8mb[34]_uca1400_[a-z_]+|utf8mb3_(general|unicode)_ci|utf8_(general|unicode)_ci"), "utf8mb4_unicode_520_ci"),
+    (re.compile(r"\b(CHARSET=|CHARACTER SET )utf8(mb3)?\b"), r"\1utf8mb4"),
+    (re.compile(r"ROW_FORMAT=(COMPACT|REDUNDANT)"), "ROW_FORMAT=DYNAMIC"),
+]
+for line in sys.stdin.buffer:
+    if line.startswith(b"/*M!999999"):  # MariaDB 11 sandbox marker, unknown to older clients
+        continue
+    if not line.startswith(b"INSERT INTO"):
+        text = line.decode("utf-8", "surrogateescape")
+        for pattern, repl in ddl:
+            text = pattern.sub(repl, text)
+        line = text.encode("utf-8", "surrogateescape")
+    sys.stdout.buffer.write(line)
+' | on target import
+
+info "media library"
+on source uploads | on target uploads
+
+if [[ "$(setting MIGRATE_CERTS 1)" != 0 ]]; then
+  info "certificates (used until the DNS switch)"
+  on source certs | on target certs
+fi
+
+info "target: credentials, sessions, paths, language packs"
+on target finalize
+
+info "comparison"
+on target inventory >"$work/target.json"
+python3 -I - "$work/source.json" "$work/target.json" <<'PY'
+import json, sys
+a, b = (json.load(open(p))["counts"] for p in sys.argv[1:3])
+same = True
+for key in sorted(set(a) | set(b)):
+    mark = "  " if a.get(key) == b.get(key) else "!="
+    same = same and mark == "  "
+    print(f" {mark} {key:14} source {json.dumps(a.get(key))}  target {json.dumps(b.get(key))}")
+print("   counts match" if same else "   some counts differ (expected only where something was left out on purpose)")
+PY
+ok "copied. Next: bin/setup-server (certificate on the vhost), bin/deploy, bin/mail-credentials"

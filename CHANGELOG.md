@@ -4,6 +4,23 @@ All notable changes are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break things).
 
+## [Unreleased]
+
+### Added
+- `bin/migrate-site`: moves a site to a new server prepared with `bin/setup-server`,
+  copying only the database and the media library (no code: core, plugins and themes come
+  again from wordpress.org at the same versions), ending every Application Password and
+  session, and copying the current certificates for testing before the DNS switch.
+- `infra/mail` and `bin/mail-credentials`: outgoing mail through Amazon SES (Easy DKIM,
+  MAIL FROM, DMARC; an IAM user limited to the From addresses), with SMTP credentials made
+  locally and installed as WP Mail SMTP constants outside the database; a Reply-To
+  mu-plugin.
+- On Lightsail's own image, `bin/setup-server` denies `xmlrpc.php` and version files,
+  stops PHP from running in uploads, and sets `ServerTokens Prod`.
+
+### Fixed
+- `bin/inventory`'s fallback to `DEPLOY_*` no longer applies to other prefixes.
+
 ## [0.5.0] - 2026-11-16
 
 ### Added

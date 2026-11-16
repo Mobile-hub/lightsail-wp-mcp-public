@@ -7,10 +7,12 @@ account (or elsewhere):
 | Stack | Creates | Needed |
 |---|---|---|
 | `instance/` | Lightsail instance (Lightsail's own WordPress image by default), static IPv4, IPv6, firewall (SSH only from the ranges you give; 80 and 443 open), optional daily snapshots, the SSH key pair (from your public key) | yes |
-| `dns/` | A and AAAA records for the site and the service in a Route 53 public zone, in any account (profile or role) | optional: skip it if your DNS is managed elsewhere and create the records by hand |
+| `dns/` | A and AAAA records for the site and the service in a Route 53 public zone, in any account (profile or role); other records (`records`, the mail stack's) | optional: skip it if your DNS is managed elsewhere and create the records by hand |
+| `mail/` | Outgoing mail through Amazon SES: the domain identity (Easy DKIM, MAIL FROM), an IAM user that may only send as the given From addresses; its DNS records as an output for `dns/` | optional: with `bin/mail-credentials` (see `docs/operations.md`) |
 
 Terraform ≥ 1.5 or OpenTofu. State is local (`terraform.tfstate`, git-ignored) unless
-you configure a backend (see `instance/versions.tf`). Variable files (`*.tfvars`) are
+you configure a backend (see `instance/versions.tf`); with several sites, keep each one's
+state next to its variables with `-state=/path/to/site/instance.tfstate`. Variable files (`*.tfvars`) are
 git-ignored; keep yours outside the repository and pass them with `-var-file`.
 
 ## From nothing to a working server

@@ -27,6 +27,53 @@ Terraform in `infra/`, whose `platform` output is the value for the site file.
 `bin/setup-server` is idempotent; run it again whenever you like (for a migrated site,
 after the DNS switch, to replace the copied certificate with certbot's).
 
+## Moving a site to a new server
+
+`bin/migrate-site` copies a site from the server it runs on (`SOURCE_*` in the site
+file of the new one) to a new server prepared with `bin/setup-server`, without carrying
+code over:
+
+- core, plugins and themes are installed again from wordpress.org at the source's
+  versions (`MIGRATE_SKIP_PLUGINS` leaves some out; `EXTRA_PLUGINS` holds reviewed code
+  for plugins that are not on wordpress.org); the image's own extra plugins and themes are
+  removed;
+- the database is copied (`MIGRATE_SKIP_TABLES` leaves out tables of plugins long gone),
+  with MariaDB 11 collations mapped to ones 10.11 knows and utf8mb3 tables turned into
+  utf8mb4; paths of the old layout are replaced;
+- the media library is copied without any code or web server settings in it;
+- every Application Password and login session is ended (wpmcp gets a new one at the next
+  `bin/deploy`), language packs are installed again, `MIGRATE_DELETE_POST_TYPES` items are
+  deleted;
+- the current certificates are copied, so the new server can be tested over HTTPS before
+  the DNS switch (with `--resolve` or a hosts entry); `bin/setup-server` replaces them with
+  certbot's once the names point at it.
+
+Data streams source → your machine → target and is not stored on the way; the source is
+only read. It ends with a comparison of counts. Each run replaces the target's database
+and media: rehearse once, then run it again right before the switch.
+
+A switch, in order: stop changes on the old site (and `systemctl stop wpmcp` there),
+`bin/migrate-site`, point the A/AAAA records at the new server (`infra/dns` with `hosts`
+and `allow_overwrite`), `bin/setup-server` (certbot), `bin/deploy`, then the owner
+password and clients again (`wpmcp-admin owner set`, `client add`; the new server starts
+with an empty wpmcp database). To go back, point the records at the old server again.
+
+## Outgoing mail
+
+`infra/mail` verifies the domain in Amazon SES (Easy DKIM, a MAIL FROM subdomain so SPF
+aligns, DMARC) and creates an IAM user that may only send raw mail through that identity,
+from the listed From addresses. `infra/dns` publishes its records (`mail_state_path`).
+`bin/mail-credentials` creates an access key for that user, turns it into an SES SMTP
+password locally, and installs it on the server with WP Mail SMTP's free "Other SMTP"
+mailer configured by constants in `/etc/wp-mail/smtp.php` (root, read by the web server's
+group only), loaded from `wp-config.php`; the From address is forced and a small mu-plugin
+adds `MAIL_REPLY_TO`. Nothing secret is printed, written locally or kept in the database.
+Run it again to rotate: older keys of the user are deleted. Nothing receives mail: give the
+domain no MX record unless something else does.
+
+A new SES account is in the sandbox (only verified recipients) until production access is
+granted (`aws sesv2 put-account-details`).
+
 ## An existing server
 
 `bin/setup-server` first: it refuses to go on with an unpatched PHP. `bin/inventory`
