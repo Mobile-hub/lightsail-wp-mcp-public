@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Prepares a fresh Lightsail WordPress instance (blueprint wordpress_ls_1_0) for wpmcp:
+# site address, certificate for WP_HOST, Polylang and All in One SEO, languages.
+# Run once after `terraform apply` (infra/) and the DNS records, before bin/deploy.
+#
+#   bin/bootstrap-site                          # settings from deploy/site.env
+#   SITE_ENV=/path/to/site.env bin/bootstrap-site
+#
+# Settings: DEPLOY_SSH, DEPLOY_SSH_KEY, WP_HOST, MCP_HOST, optional ACME_EMAIL and
+# SITE_LANGUAGES (WordPress locales, the first is the default; default en_US).
+source "$(dirname "$0")/lib.sh"
+
+target="$(setting DEPLOY_SSH)"
+key="$(setting DEPLOY_SSH_KEY)"
+wp_host="$(setting WP_HOST)"
+mcp_host="$(setting MCP_HOST)"
+acme_email="$(setting ACME_EMAIL)"
+languages="$(setting SITE_LANGUAGES en_US)"
+[[ -n "$target" ]] || die "set DEPLOY_SSH (user@host) in $SITE_ENV"
+[[ -z "$key" || -r "$key" ]] || die "cannot read DEPLOY_SSH_KEY: $key"
+host_re='^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'
+[[ "$wp_host" =~ $host_re && "$mcp_host" =~ $host_re ]] || die "set WP_HOST and MCP_HOST (lower-case host names)"
+[[ "$languages" =~ ^[a-z]{2,3}(_[A-Z]{2})?(,[a-z]{2,3}(_[A-Z]{2})?)*$ ]] || die "SITE_LANGUAGES: locales such as en_GB,es_ES"
+ssh_args=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes)
+[[ -n "$key" ]] && ssh_args+=(-i "$key" -o IdentitiesOnly=yes)
+known="$(setting DEPLOY_KNOWN_HOSTS)"
+[[ -n "$known" ]] && ssh_args+=(-o UserKnownHostsFile="$known")
+
+stage="$ROOT/var/bootstrap/stage"
+rm -rf "$stage" && mkdir -p "$stage"
+cp "$ROOT/deploy/bootstrap-site.sh" "$ROOT/deploy/bootstrap-languages.php" "$ROOT/deploy/platform.sh" "$stage/"
+printf 'MCP_HOST=%s\nWP_HOST=%s\nACME_EMAIL=%s\nSITE_LANGUAGES=%s\n' \
+  "$mcp_host" "$wp_host" "$acme_email" "$languages" >"$stage/site.conf"
+info "bootstrap https://$wp_host on $target"
+
+# shellcheck disable=SC2016 # expanded on the server
+tar -C "$stage" -cz . | ssh "${ssh_args[@]}" "$target" \
+  'd="$(mktemp -d)"; trap "rm -rf \"$d\"" EXIT; tar -C "$d" -xz && sudo -n bash "$d/bootstrap-site.sh" "$d"'
+ok "site ready: next, bin/deploy"

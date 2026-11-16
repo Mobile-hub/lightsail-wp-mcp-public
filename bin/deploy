@@ -5,7 +5,7 @@
 #   SITE_ENV=/path/to/site.env bin/deploy       # or from a file kept elsewhere
 #
 # Settings (see deploy/site.env.example): DEPLOY_SSH, DEPLOY_SSH_KEY, MCP_HOST, WP_HOST,
-# SITE_NAME, optional EXTRA_MU_PLUGINS and WPMCP_* overrides. Each can also come from the
+# SITE_NAME, optional ACME_EMAIL, EXTRA_MU_PLUGINS and WPMCP_* overrides. Each can also come from the
 # environment.
 #
 # Ships: the wheel, the hash-pinned requirements, the bridge mu-plugin (plus any extra
@@ -20,6 +20,7 @@ mcp_host="$(setting MCP_HOST)"
 wp_host="$(setting WP_HOST)"
 site_name="$(setting SITE_NAME WordPress)"
 extra_mu="$(setting EXTRA_MU_PLUGINS)"
+acme_email="$(setting ACME_EMAIL)"
 [[ -n "$target" ]] || die "set DEPLOY_SSH (user@host) in $SITE_ENV"
 [[ -z "$key" || -r "$key" ]] || die "cannot read DEPLOY_SSH_KEY: $key"
 host_re='^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'
@@ -29,17 +30,21 @@ host_re='^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'
 # wpmcp.env is read by systemd and sourced by wpmcp-admin: keep values shell-inert.
 shell_safe() { [[ "$1" != *[\"\$\`\\]* && "$1" != *$'\n'* ]]; }
 shell_safe "$site_name" || die "SITE_NAME must not contain quotes, \$, backticks or backslashes"
+[[ -z "$acme_email" || "$acme_email" =~ ^[^[:space:]@\"\']+@[a-z0-9.-]+$ ]] || die "ACME_EMAIL is not an e-mail address"
 [[ -z "$extra_mu" || -d "$extra_mu" ]] || die "EXTRA_MU_PLUGINS is not a directory: $extra_mu"
 ssh_args=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes)
 [[ -n "$key" ]] && ssh_args+=(-i "$key" -o IdentitiesOnly=yes)
+known="$(setting DEPLOY_KNOWN_HOSTS)"
+[[ -n "$known" ]] && ssh_args+=(-o UserKnownHostsFile="$known")
 
 [[ "${DEPLOY_SKIP_TESTS:-}" == 1 ]] || "$ROOT/bin/test"
 
 stage="$ROOT/var/deploy/stage"
-rm -rf "$stage" && mkdir -p "$stage/apache" "$stage/mu-plugins/extra" "$stage/systemd"
+rm -rf "$stage" && mkdir -p "$stage/apache/bitnami" "$stage/apache/debian" "$stage/mu-plugins/extra" "$stage/systemd"
 run_uv build --wheel --quiet --out-dir "$stage" >/dev/null
 "$ROOT/bin/cidrs-update" >"$stage/cidrs.txt"
-cp "$ROOT/deploy/requirements.txt" "$ROOT/deploy/wpmcp-admin" "$ROOT/deploy/remote-install.sh" "$stage/"
+cp "$ROOT/deploy/requirements.txt" "$ROOT/deploy/wpmcp-admin" "$ROOT/deploy/remote-install.sh" \
+  "$ROOT/deploy/platform.sh" "$stage/"
 cp "$ROOT"/deploy/systemd/* "$stage/systemd/"
 cp -r "$ROOT/wordpress/mu-plugins/wpmcp-bridge.php" "$ROOT/wordpress/mu-plugins/wpmcp-bridge" \
   "$stage/mu-plugins/"
@@ -61,7 +66,9 @@ open(sys.argv[2], "w", encoding="utf-8").write(text)' \
     "$1" "$2" "MCP_HOST=$mcp_host" "WP_HOST=$wp_host" "SITE_NAME=$site_name"
 }
 render "$ROOT/deploy/wpmcp.env" "$stage/wpmcp.env"
-for conf in "$ROOT"/deploy/apache/*.conf; do render "$conf" "$stage/apache/$(basename "$conf")"; done
+for conf in "$ROOT"/deploy/apache/*/*.conf; do
+  render "$conf" "$stage/apache/$(basename "$(dirname "$conf")")/$(basename "$conf")"
+done
 # WPMCP_* lines of the site file override the defaults (the last assignment wins).
 if [[ -f "$SITE_ENV" ]]; then
   while IFS= read -r line; do
@@ -71,7 +78,7 @@ if [[ -f "$SITE_ENV" ]]; then
     printf '%s="%s"\n' "${line%%=*}" "$value" >>"$stage/wpmcp.env"
   done <"$SITE_ENV"
 fi
-printf 'MCP_HOST=%s\nWP_HOST=%s\n' "$mcp_host" "$wp_host" >"$stage/site.conf"
+printf 'MCP_HOST=%s\nWP_HOST=%s\nACME_EMAIL=%s\n' "$mcp_host" "$wp_host" "$acme_email" >"$stage/site.conf"
 python3 -c 'import tomllib,sys; print(tomllib.load(open(sys.argv[1],"rb"))["project"]["version"])' \
   "$ROOT/pyproject.toml" >"$stage/VERSION"
 info "release $(cat "$stage/VERSION") for $mcp_host -> $target"

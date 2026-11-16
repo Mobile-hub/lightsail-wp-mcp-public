@@ -34,6 +34,7 @@ ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes
 InaccessiblePaths=-/etc/wpmcp -/var/lib/wpmcp -/run/wpmcp -/bitnami -/opt/bitnami -/root -/home
+InaccessiblePaths=-/var/www -/etc/letsencrypt -/etc/ssl/private -/var/lib/mysql -/etc/mysql -/etc/apache2 -/opt/aws
 
 # Kernel and privileges.
 NoNewPrivileges=yes

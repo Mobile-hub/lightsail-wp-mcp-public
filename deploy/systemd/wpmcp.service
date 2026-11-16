@@ -2,7 +2,7 @@
 # Installed by deploy/remote-install.sh. Secrets come in as systemd credentials.
 [Unit]
 Description=wpmcp - MCP server for the WordPress site
-After=network.target bitnami.service wpmcp-media.socket
+After=network.target bitnami.service apache2.service mariadb.service wpmcp-media.socket
 Wants=network.target wpmcp-media.socket
 
 [Service]
@@ -16,7 +16,7 @@ ExecStart=/opt/wpmcp/current/venv/bin/wpmcp serve
 Restart=on-failure
 RestartSec=3
 
-# The socket directory comes from tmpfiles.d (wpmcp:daemon, 0710): Apache may enter it,
+# The socket directory comes from tmpfiles.d (wpmcp:<Apache group>, 0710): Apache may enter it,
 # nobody else. Not RuntimeDirectory=, which would reset its group on every start.
 ReadWritePaths=/run/wpmcp
 StateDirectory=wpmcp
@@ -42,6 +42,8 @@ ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes
 InaccessiblePaths=-/bitnami -/opt/bitnami/wordpress -/opt/bitnami/letsencrypt -/opt/bitnami/mariadb -/opt/bitnami/apache/conf -/home
+# The same on Lightsail's own image (Debian): site files, wp-config, keys, database.
+InaccessiblePaths=-/var/www -/etc/letsencrypt -/etc/ssl/private -/var/lib/mysql -/etc/mysql -/etc/apache2 -/opt/aws
 
 # Kernel and privileges.
 NoNewPrivileges=yes
