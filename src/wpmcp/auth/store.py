@@ -90,6 +90,14 @@ CREATE INDEX IF NOT EXISTS refresh_grant ON refresh_tokens (grant_id);
 CLI_CLIENT_ID = "cli"
 
 
+def _grant_id() -> str:
+    """A random grant ID that never starts with '-', so the CLI does not read it as an option."""
+    while True:
+        value = secrets.token_urlsafe(12)
+        if not value.startswith("-"):
+            return value
+
+
 def _hash(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
@@ -333,7 +341,7 @@ class Store:
             ).fetchone()
             if row is None:
                 return None
-            grant_id = secrets.token_urlsafe(12)
+            grant_id = _grant_id()
             db.execute(
                 "UPDATE codes SET used_at = ?, grant_id = ? WHERE code_hash = ?",
                 (at, grant_id, _hash(code)),
@@ -352,7 +360,7 @@ class Store:
         self, client_id: str, scope: str, resource: str, now: float | None = None
     ) -> Grant:
         at = int(now if now is not None else time.time())
-        grant_id = secrets.token_urlsafe(12)
+        grant_id = _grant_id()
         with self._tx() as db:
             db.execute(
                 "INSERT INTO grants (grant_id, client_id, scope, resource, created_at) "

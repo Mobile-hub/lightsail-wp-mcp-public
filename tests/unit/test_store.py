@@ -201,3 +201,11 @@ def test_transaction_rolls_back_on_error(db):
     assert [c.name for c in db.list_clients()] == ["A"]
     # The connection is usable afterwards (no transaction left open).
     db.add_client("C", ["https://c.example/cb"])
+
+
+def test_grant_ids_never_look_like_cli_options(monkeypatch):
+    from wpmcp.auth import store as store_module
+
+    values = iter(["-starts-with-dash", "fine"])
+    monkeypatch.setattr(store_module.secrets, "token_urlsafe", lambda _n: next(values))
+    assert store_module._grant_id() == "fine"
