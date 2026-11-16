@@ -18,8 +18,13 @@ All notable changes are listed here. The format follows
 - On Lightsail's own image, `bin/setup-server` denies `xmlrpc.php` and version files,
   stops PHP from running in uploads, and sets `ServerTokens Prod`.
 
+- On Lightsail's own image, `bin/setup-server` removes world write access under the web
+  root (the image leaves five directories 777) and group write access to `/var/www`.
+
 ### Fixed
 - `bin/inventory`'s fallback to `DEPLOY_*` no longer applies to other prefixes.
+- `bin/migrate-site` lists only regular plugins when it removes the image's extras.
+- After the DNS switch, a rewrite flush with the plugins loaded (Polylang's prefixes).
 
 ## [0.5.0] - 2026-11-16
 

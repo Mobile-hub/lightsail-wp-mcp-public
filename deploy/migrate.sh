@@ -145,7 +145,8 @@ prepare) # Target: core, plugins and themes from wordpress.org at the source's v
       fi
     done
   keep="$(python3 -I -c 'import json,sys; print(" ".join(p["slug"] for p in json.load(open(sys.argv[1]))["plugins"]))' "$inv")"
-  for slug in $(wpq plugin list --field=name); do
+  # Regular plugins only: must-use ones and drop-ins are not wordpress.org's to manage.
+  for slug in $(wpq plugin list --fields=name,status --format=csv | awk -F, 'NR > 1 && $2 != "must-use" && $2 != "dropin" {print $1}'); do
     [[ " $keep " == *" $slug "* && "$skip" != *" $slug "* ]] || { wp plugin delete "$slug" --quiet && say "plugin $slug: removed (not on the source)"; }
   done
   read -r stylesheet template < <(python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["stylesheet"], d["template"])' "$inv")

@@ -82,6 +82,15 @@ else
 fi
 echo "home: $(wp option get home)"
 
+step "file permissions"
+# The image leaves wp-content, plugins, themes and upgrade world-writable, and /var/www
+# (which holds wp-config.php) writable by the web server's group, so PHP could replace
+# wp-config.php. The web server keeps its group write access to the web root (updates).
+chmod g-w,o-w "$(dirname "$WP_CONFIG")"
+writable="$(find "$WP" -xdev -perm -0002 ! -type l | wc -l)"
+find "$WP" -xdev -perm -0002 ! -type l -exec chmod o-w {} +
+echo "world-writable entries fixed: $writable; $(stat -c '%A %U:%G' "$(dirname "$WP_CONFIG")") $(dirname "$WP_CONFIG")"
+
 step "apache: the site's vhosts and permalinks"
 a2enmod -q headers ssl rewrite >/dev/null
 cat >"$tmp" <<CONF
@@ -136,7 +145,8 @@ else
 fi
 
 step "checks over loopback"
-for _ in $(seq 1 15); do
+# Apache may have just restarted (mod_php): give it up to 30 s.
+for _ in $(seq 1 30); do
   [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 --resolve "$WP_HOST:443:127.0.0.1" "https://$WP_HOST/")" == 000 ]] || break
   sleep 1
 done
