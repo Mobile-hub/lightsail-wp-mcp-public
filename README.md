@@ -85,6 +85,9 @@ token` mints a short-lived read-only access token for smoke tests.
 
 ## Deploy
 
+Step by step for a person, from an empty AWS account to ChatGPT and Claude connected and
+mail through SES: [`docs/zero-to-ninja.md`](docs/zero-to-ninja.md).
+
 A new server, from nothing ([`infra/README.md`](infra/README.md)):
 
 ```bash
@@ -128,7 +131,7 @@ Site-specific read-only fields (for example the meta of your own plugin) can be 
   (`platform.<name>.sh`, `setup.<name>.sh`, `apache/<name>/`), systemd units, the server
   install and a fresh site's bootstrap
 - `dev/`, `bin/dev` — the local WordPress stack for integration tests
-- `docs/` — architecture, security model, operations, clients
+- `docs/` — a walkthrough from zero, architecture, security model, operations, clients
 - `memory-bank/` — current state and working notes of the project
 - `AGENTS.md` — rules for anyone (human or agent) changing this repository
 - `PROVENANCE.md` — code taken from `editorial.workflow`

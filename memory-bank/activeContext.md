@@ -1,6 +1,6 @@
 # Active context
 
-_Updated 2026-11-16._
+_Updated 2026-11-17._
 
 ## Current focus
 Release 0.5.0 (bridge 0.5.0) completes the editing features: live tools (publish,
@@ -21,6 +21,10 @@ switch), `infra/mail` + `bin/mail-credentials` (SES via WP Mail SMTP's free SMTP
 constants outside the database), Apache hardening on Lightsail's own image. Rehearsed on
 2026-11-16: a real Bitnami site copied to Lightsail's own image with matching counts and
 pages; the Bitnami path was tested on a throwaway instance and 0.5.0 deployed on Bitnami.
+
+`docs/zero-to-ninja.md` (2026-11-17) is the human walkthrough; it only orders what the
+reference docs say, so keep it in step with `infra/README.md`, `operations.md` and
+`clients.md` when they change.
 
 Lessons from real servers: fresh Bitnami images ship an unpatched PHP (8.4.20 in
 November 2026), no python3-venv, and no lego/ACME webroot until bncert-tool runs; a rewrite

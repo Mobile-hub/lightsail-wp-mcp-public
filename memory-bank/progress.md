@@ -22,11 +22,15 @@
   digest); one set of files per platform and `bin/setup-server`. 411 tests, 99% coverage.
 
 - 2026-11-16 — Unreleased: `bin/migrate-site`, `infra/mail`, `bin/mail-credentials`,
-  Apache hardening; rehearsed on a real site.
+  Apache hardening; rehearsed on a real site, then used for a real migration.
+- 2026-11-17 — `docs/zero-to-ninja.md`, the walkthrough for a person (console, ChatGPT,
+  Claude, SES sandbox and production access).
 
 ## Not done
 - Connecting Claude.
-- Deploying 0.5.0; trying the live tools against the real products.
+- Trying the live tools against the real products (ChatGPT, Claude).
+- Checking the ChatGPT menu path in `docs/zero-to-ninja.md` against the product after each
+  UI change (OpenAI moves it).
 - Integration tests in CI.
 
 ## Known gaps

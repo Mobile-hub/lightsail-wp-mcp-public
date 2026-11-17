@@ -15,6 +15,8 @@ All notable changes are listed here. The format follows
   MAIL FROM, DMARC; an IAM user limited to the From addresses), with SMTP credentials made
   locally and installed as WP Mail SMTP constants outside the database; a Reply-To
   mu-plugin.
+- `docs/zero-to-ninja.md`: a step-by-step walkthrough for a person, from an empty AWS
+  account to ChatGPT and Claude connected and mail through SES.
 - On Lightsail's own image, `bin/setup-server` denies `xmlrpc.php` and version files,
   stops PHP from running in uploads, and sets `ServerTokens Prod`.
 
