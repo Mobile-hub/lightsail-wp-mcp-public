@@ -17,7 +17,12 @@ translation links (Polylang), SEO fields (All in One SEO), drafts (`rest-write.p
 changes with their safety nets (`rest-live.php`: protected pages, revisions kept, trash
 only, the change log and its hourly digest), menus (`rest-menus.php`: typed items, saved
 versions), and a filter (`wpmcp_bridge_extra_fields`) through which a site adds its own
-read-only fields.
+read-only fields. Each bridge operation is defined once and registered both as a route and
+as an ability of the WordPress Abilities API (`abilities.php`, `wpmcp/*`, not public); the
+route runs the ability, so its input schema, permission check and core lifecycle hooks
+apply to every caller. Abilities of core or other plugins that the owner lists
+(`site-abilities.php`) are run through two more routes and become tools of their own
+(`tools/abilities.py`).
 
 Images take a separate path. The service never decodes them: it hands the bytes (or, for
 ChatGPT files, the download URL) to the image worker over a Unix socket. systemd starts one
@@ -51,6 +56,9 @@ ChatGPT / Claude ──HTTPS──▶ Apache ──unix──▶ wpmcp serve ─
 | Decision | Why | Alternative considered |
 |---|---|---|
 | Own service next to WordPress, not a WordPress plugin | OAuth keys and tokens stay out of the WordPress database and its backups; least privilege is enforced by WordPress capabilities, not by plugin code; the official MCP Adapter has no OAuth yet | Official MCP Adapter plus an OAuth plugin |
+| Bridge operations as abilities, routes run them | One definition per operation; the standard schema validation, permission check and lifecycle hooks for every caller; WP-CLI, WordPress's AI client or an MCP Adapter server can reuse them; ready for a later move to the Adapter | Plain REST routes only (0.6 and earlier); the service calling `/wp-abilities/v1` (method mapping, permission run twice, abilities would have to be shown in REST) |
+| MCP Adapter not used yet | Checked on 2026-11-19: 0.7.1 is pre-1.0 and has no OAuth (hosted ChatGPT and claude.ai cannot connect to it on their own; PR #437 has no scopes or second factor), no Origin check, sessions in user meta, no budgets. Revisit when it reaches 1.0 and OAuth with scopes is in core (targeted for 7.3): the service could then keep consent, gate and budgets in front of an Adapter server listing the `wpmcp/*` abilities | An Adapter custom server behind this service; the Adapter with an OAuth plugin (tokens in the WordPress database) |
+| Site abilities listed on the WordPress side, each its own tool | The bridge enforces the list even if the service is compromised; one place to change it; each tool keeps a schema, a scope and budgets | A list in the service; every public ability; one tool that runs any listed ability by name (a generic tool) |
 | Same machine | The WordPress credential can be restricted to loopback | Lambda or a second instance (documented fallback; needs the credential to work over the internet) |
 | One process, not gateway + upstream | Both halves are ours; scopes cannot be forged between processes; saves memory on a 1 GB instance | The two-process layout of `editorial.workflow` |
 | Pre-registered confidential clients | Removes the open registration endpoint | Client ID Metadata Documents (possible later, with pinned metadata) |

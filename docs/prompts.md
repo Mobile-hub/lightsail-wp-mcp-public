@@ -44,6 +44,7 @@ such as *About* and *Tips*. Swap in your own site's topics, languages and IDs.
 | 2.9 | *Show the saved revisions of post `<post-id>`.* | `list_revisions` | Newest first, with dates and sizes |
 | 2.10 | *Show me the navigation menus, per location and language.* | `get_menus` | Menu IDs, `version`, items, the language switcher |
 | 2.11 | *What has changed on the site in the last three days?* | `get_recent_changes` (`since`) | Created, edited, published and trashed items, newest first |
+| 2.12 | *(with `core/get-user-info` in `WPMCP_BRIDGE_ABILITIES`)* *Which WordPress user do you work as on this site?* | `core_get_user_info` | The integration user; the tool appears only once the owner lists the ability ([operations.md](operations.md#site-abilities)) |
 
 ## 3. Drafts, categories and images
 

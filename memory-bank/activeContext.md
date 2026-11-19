@@ -3,7 +3,15 @@
 _Updated 2026-11-19._
 
 ## Current focus
-0.6.0 (bridge 0.6.0) fixes editing long posts and pages from ChatGPT, which cuts long
+0.7.0 (bridge 0.7.0) after reviewing WordPress's MCP Adapter (0.7.1, pre-1.0, no OAuth)
+and the Abilities API (core since 6.9, read abilities only): nothing replaced, three
+levers taken. Tools declare `outputSchema` + `structuredContent` and `idempotentHint`;
+every bridge operation is a `wpmcp/*` ability that its route runs (`abilities.php`);
+abilities the owner lists on the WordPress side become tools (`site-abilities.php`,
+`tools/abilities.py`). Revisit replacing the service's MCP layer when the Adapter reaches
+1.0 and OAuth with scopes lands in core (targeted 7.3). Not yet deployed.
+
+Before 0.7.0: 0.6.0 (bridge 0.6.0) fixes editing long posts and pages from ChatGPT, which cuts long
 tool results at a line boundary and so lost the body and the `version` after it:
 `get_content` answers the version first and a long body in parts, a much shorter body is
 refused without `allow_shrink`, and `insert_image` places an image without sending the

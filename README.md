@@ -54,6 +54,11 @@ image into a body without rewriting it; drafts too), `restore_revision`,
 kept). They have their own hourly budget, protected pages, and an hourly digest e-mail to
 the site's admin address.
 
+Site abilities: abilities of WordPress core or other plugins that the owner lists by name
+on the WordPress side become tools of their own, typed by their schema and confined to the
+integration user's capabilities ([`docs/operations.md`](docs/operations.md#site-abilities)).
+The bridge's own operations are WordPress abilities too (`wpmcp/*`, not public).
+
 Never exposed: users, plugins, themes, options, comments, permanent deletes, media
 deletes, files, WP-CLI, SQL or arbitrary URLs.
 
@@ -64,7 +69,9 @@ deletes, files, WP-CLI, SQL or arbitrary URLs.
   new one with Terraform. The site file's `PLATFORM` (`debian` or `bitnami`) picks the
   matching `deploy/platform.<name>.sh` and `deploy/setup.<name>.sh`; nothing is detected.
   Another layout is a new pair of those files.
-- **WordPress:** tested on 7.1 with **Polylang** 3.9 (free, required) and **All in One
+- **WordPress:** 6.9 or later for the abilities (on older versions the bridge falls back
+  to plain routes; not tested);
+  tested on 7.1 with **Polylang** 3.9 (free, required) and **All in One
   SEO** 5.0 (SEO fields are absent without it).
 - **A host name for the service** (for example `mcp.example.org`) pointing at the server.
 - **Locally:** [uv](https://docs.astral.sh/uv/), and podman or docker for the WordPress

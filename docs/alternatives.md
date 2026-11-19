@@ -44,8 +44,9 @@ runtime one wants to control.
   below build on it. [Repository](https://github.com/WordPress/mcp-adapter),
   [announcement](https://make.wordpress.org/ai/2025/07/17/mcp-adapter/).
 
-This project does not use them yet: its tools talk to WordPress through its own bridge
-routes. Exposing those tools as abilities is a possible direction.
+Since 0.7.0 this project's bridge registers its operations as abilities (`wpmcp/*`, not
+public) and can offer abilities that the owner lists as tools; it does not use the MCP
+Adapter, which has no OAuth yet (see [architecture.md](architecture.md)).
 
 ## Plugins that run the MCP server on the site itself
 
@@ -81,8 +82,8 @@ Some approaches above go in directions this project has not taken, or has chosen
 differently:
 
 - **Abilities as the tool source.** Discovering abilities from core and other plugins
-  instead of a fixed tool list (this project keeps a fixed, typed list on purpose; see
-  [security.md](security.md)).
+  instead of a fixed tool list (this project keeps a fixed, typed list and adds only the
+  abilities the owner names; see [security.md](security.md)).
 - **Undo for every change.** Receipts, checkpoints or per-operation undo, compared with this
   project's revisions, trash and saved menu versions.
 - **Per-user binding.** Tying a connection to a chosen WordPress user and its capabilities.

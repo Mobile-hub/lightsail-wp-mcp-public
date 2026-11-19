@@ -194,6 +194,32 @@ menus; 0 turns them off), `WPMCP_MEDIA_MAX_BYTES` (10 MB per image; Apache allow
 
 Images are always new uploads; removing one is done in wp-admin (the tools never delete).
 
+## Site abilities
+
+Abilities that WordPress core or other plugins register can be offered to the assistants
+as tools, one by one. None are by default. List them by exact name in `wp-config.php`:
+
+```php
+define( 'WPMCP_BRIDGE_ABILITIES', 'core/get-user-info,example/get-forecast' );
+```
+
+or from a site mu-plugin (`EXTRA_MU_PLUGINS`) with the `wpmcp_bridge_abilities` filter,
+which receives and returns the list of names. At most 20; `wpmcp/*` names are ignored.
+The service picks the list up within ten minutes; then use "refresh tools" in ChatGPT, or
+reconnect Claude. `wp eval 'print_r( array_keys( wp_get_abilities() ) );'` on the server
+shows what the site has.
+
+Each ability runs as the integration user, so it only does what that user's fixed
+capabilities allow (`core/get-site-info`, for example, needs `manage_options` and is
+refused). One not marked read-only needs a read-and-write connection, counts as a live
+change and goes into the digest as "ran ability ...". It may have no version check and no
+way back: list only abilities whose effect you understand.
+
+The bridge's own operations are abilities too (`wpmcp/get-content`, ... in the `wpmcp`
+category). They are not public; WP-CLI can run them as a user
+(`wp eval 'print_r( wp_get_ability( "wpmcp/get-site-overview" )->execute() );' --user=admin`),
+but then without the service's budgets, scopes and audit.
+
 ## Switching the address allowlist to enforce
 
 After both clients have connected and worked for a while, check that no legitimate call

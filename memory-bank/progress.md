@@ -41,6 +41,11 @@
   This also explains the day before (write results have no `content` field), so the size
   was probably not the cause; the 0.6.0 safeguards stay.
 
+- 2026-11-19 — 0.7.0 (bridge 0.7.0): analysis of the MCP Adapter and the Abilities API
+  (decision rows in `docs/architecture.md`); output schemas and structured content,
+  idempotency hints; bridge operations as abilities; owner-listed site abilities as tools.
+  448 tests, 99% coverage, on the local stack (WordPress 7.1.5).
+
 ## Not done
 - Connecting Claude.
 - Trying the live tools against the real products (ChatGPT, Claude).

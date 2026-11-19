@@ -6,6 +6,12 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-19
+
+The bridge moves onto WordPress's Abilities API, and owner-listed abilities of core or
+other plugins become tools. The MCP Adapter is not used yet: it has no OAuth, so hosted
+ChatGPT and claude.ai cannot reach it on their own (see `docs/architecture.md`).
+
 ### Added
 - Every tool declares an `outputSchema` (an object) and answers `structuredContent`
   next to the JSON text, as OpenAI's MCP documentation recommends.
