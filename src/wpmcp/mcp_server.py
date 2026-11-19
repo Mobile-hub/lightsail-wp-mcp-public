@@ -25,12 +25,13 @@ from .auth.ratelimit import SlidingWindow
 from .auth.store import Store
 from .config import RESOURCE_PATH, Settings
 from .media.worker import MediaProcessor
-from .tools import Registry
+from .tools import Registry, ToolSpec
 from .tools import info as info_tools
 from .tools import live as live_tools
 from .tools import read as read_tools
 from .tools import write as write_tools
-from .wp.client import WordPressClient
+from .tools.abilities import AbilityTool, SiteAbilities
+from .wp.client import WordPressClient, WordPressError
 
 READ_ONLY_REFUSAL = (
     "Refused: this connection is read-only. To allow changes, the owner must reconnect "
@@ -65,7 +66,12 @@ def instructions(settings: Settings) -> str:
 
 
 class WpMcp(FastMCP):
-    def __init__(self, registry: Registry, settings: Settings) -> None:
+    def __init__(
+        self,
+        registry: Registry,
+        settings: Settings,
+        site_abilities: Callable[[Callable[[str], bool]], SiteAbilities] | None = None,
+    ) -> None:
         super().__init__(
             "wpmcp",
             instructions=instructions(settings),
@@ -80,6 +86,11 @@ class WpMcp(FastMCP):
             ),
         )
         self.registry = registry
+        # Abilities the site owner listed on the WordPress side (tools/abilities.py); they
+        # never take the name of a fixed tool.
+        self.site_abilities = (
+            site_abilities(lambda name: registry.get(name) is not None) if site_abilities else None
+        )
         self.write_budget = SlidingWindow(limit=settings.write_budget, window=3600.0)
         self.live_budget = SlidingWindow(limit=settings.live_budget, window=3600.0)
         for spec in registry:
@@ -113,15 +124,27 @@ class WpMcp(FastMCP):
             data["securitySchemes"] = schemes
             data["_meta"] = {**(data.get("_meta") or {}), "securitySchemes": schemes}
             visible.append(MCPTool.model_validate(data))
+        for ability in (await self._site_tools()).values():
+            if principal.can(ability.scope):
+                schemes = [{"type": "oauth2", "scopes": [ability.scope]}]
+                data = ability.definition()
+                data["securitySchemes"] = schemes
+                data["_meta"] = {"securitySchemes": schemes}
+                visible.append(MCPTool.model_validate(data))
         return visible
+
+    async def _site_tools(self) -> dict[str, AbilityTool]:
+        return await self.site_abilities.tools() if self.site_abilities else {}
 
     async def call_tool(
         self, name: str, arguments: dict[str, Any]
     ) -> Sequence[ContentBlock] | dict[str, Any]:
         principal = self._principal()
-        spec = self.registry.get(name)
         if principal is None:
             raise ToolError("Refused: unauthenticated request.")
+        spec: ToolSpec | AbilityTool | None = self.registry.get(name)
+        ability = None if spec else (await self._site_tools()).get(name)
+        spec = spec or ability
         if spec is None:
             raise ToolError(f"Refused: unknown tool {name!r}.")
         if not principal.can(spec.scope):
@@ -134,7 +157,10 @@ class WpMcp(FastMCP):
             )
             raise ToolError(READ_ONLY_REFUSAL)
         tool = self._tool_manager.get_tool(name)
-        known = set((tool.parameters if tool else {}).get("properties", {}))
+        if ability is not None:
+            known = ability.known_arguments
+        else:
+            known = set((tool.parameters if tool else {}).get("properties", {}))
         unknown = sorted(set(arguments or {}) - known)
         if unknown:
             # Pydantic would drop them silently; a model that sent status="publish" must
@@ -166,7 +192,25 @@ class WpMcp(FastMCP):
                 "or make the change in wp-admin."
             )
         audit("tool_call", tool=name, client=principal.client_id, grant=principal.grant_id)
+        if ability is not None:
+            return await self._run_ability(ability, arguments or {}, principal)
         return await super().call_tool(name, arguments)
+
+    async def _run_ability(
+        self, ability: AbilityTool, arguments: dict[str, Any], principal: Principal
+    ) -> dict[str, Any]:
+        try:
+            result = await self.site_abilities.run(ability, arguments)
+        except WordPressError as exc:
+            raise ToolError(str(exc)) from exc
+        if not ability.read_only:
+            audit(
+                "wp_write",
+                tool=ability.name,
+                client=principal.client_id,
+                grant=principal.grant_id,
+            )
+        return result
 
 
 def default_registry(
@@ -195,4 +239,7 @@ def build_mcp(
     media: MediaProcessor | None = None,
     clock: Callable[[], float] = time.time,
 ) -> WpMcp:
-    return WpMcp(registry or default_registry(settings, wp, store, media, clock), settings)
+    site = None
+    if registry is None and wp is not None:
+        site = lambda reserved: SiteAbilities(wp, reserved, clock)  # noqa: E731
+    return WpMcp(registry or default_registry(settings, wp, store, media, clock), settings, site)

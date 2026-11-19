@@ -18,3 +18,4 @@ require_once __DIR__ . '/wpmcp-bridge/rest-write.php';
 require_once __DIR__ . '/wpmcp-bridge/rest-live.php';
 require_once __DIR__ . '/wpmcp-bridge/rest-menus.php';
 require_once __DIR__ . '/wpmcp-bridge/abilities.php';
+require_once __DIR__ . '/wpmcp-bridge/site-abilities.php';

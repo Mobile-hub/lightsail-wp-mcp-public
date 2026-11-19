@@ -415,13 +415,11 @@ function wpmcp_send_live_digest(): void {
 	$site  = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
 	$lines = array();
 	foreach ( $log as $entry ) {
-		$lines[] = sprintf(
-			'%s  %s  #%d  %s',
-			gmdate( 'Y-m-d H:i', (int) $entry['time'] ) . ' UTC',
-			$entry['action'],
-			(int) $entry['id'],
-			admin_url( 'post.php?post=' . (int) $entry['id'] . '&action=edit' )
-		);
+		$when = gmdate( 'Y-m-d H:i', (int) $entry['time'] ) . ' UTC';
+		// Site abilities (site-abilities.php) change no single item: no ID, no edit link.
+		$lines[] = (int) $entry['id'] > 0
+			? sprintf( '%s  %s  #%d  %s', $when, $entry['action'], (int) $entry['id'], admin_url( 'post.php?post=' . (int) $entry['id'] . '&action=edit' ) )
+			: sprintf( '%s  %s', $when, $entry['action'] );
 	}
 	$body = "Changes made through wpmcp (the AI assistant connection) on $site:\n\n" . implode( "\n", $lines )
 		. "\n\nEach one can be undone in wp-admin (revisions, trash). To stop all access: wpmcp-admin revoke-all on the server.\n";

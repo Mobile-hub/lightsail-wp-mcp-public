@@ -817,8 +817,9 @@ def test_every_operation_is_an_ability_with_the_tools_annotations(writer):
     client, token = writer
     tools = {t["name"]: t for t in rpc_result(rpc(client, token, "tools/list"))["tools"]}
     python_only = {"get_connection_info", "import_image", "request_image_upload"}
+    site = {name for name, t in tools.items() if t["description"].startswith("Site ability")}
     names = {name.removeprefix("wpmcp/").replace("-", "_") for name in abilities}
-    assert names == set(tools) - python_only
+    assert names == set(tools) - python_only - site
     for name, meta in abilities.items():
         hints = tools[name.removeprefix("wpmcp/").replace("-", "_")]["annotations"]
         expected = (hints["readOnlyHint"], hints["destructiveHint"], hints["idempotentHint"])
@@ -848,3 +849,28 @@ def test_routes_run_through_the_abilities(writer, created):
     assert f"rest {draft['version']}" in lines and f"direct {draft['version']}" in lines
     assert lines.count("bad ability_invalid_input") == 2
     assert "anon ability_invalid_permissions" in lines
+
+
+# --- site abilities listed by the owner (WPMCP_BRIDGE_ABILITIES, set by bin/dev provision)
+
+
+def test_listed_site_abilities_are_tools_confined_to_the_integration_user(writer):
+    client, token = writer
+    tools = {t["name"]: t for t in rpc_result(rpc(client, token, "tools/list"))["tools"]}
+    assert {"core_get_user_info", "core_get_site_info"} <= set(tools)
+    assert not {name for name in tools if name.startswith("example_")}  # not on this site
+    assert "core_get_environment_info" not in tools  # on the site, not on the list
+
+    me = tool(writer, "core_get_user_info")
+    assert me["ability"] == "core/get-user-info" and me["result"]["user_login"] == "wpmcp"
+    # Listed, but it needs manage_options, which the integration user never has.
+    refused = attempt(writer, "core_get_site_info")
+    assert refused["isError"] is True and "permission" in str(refused)
+
+    off_list = dev_eval(
+        AS_INTEGRATION_USER
+        + '$q = new WP_REST_Request( "POST", "/wpmcp/v1/abilities/run" );'
+        + '$q->set_body_params( array( "name" => "core/get-environment-info" ) );'
+        + "echo rest_do_request( $q )->get_status();"
+    )
+    assert off_list.strip() == "404"

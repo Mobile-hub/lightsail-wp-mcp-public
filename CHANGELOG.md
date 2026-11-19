@@ -19,6 +19,14 @@ All notable changes are listed here. The format follows
   client or an MCP Adapter server can use them too. They are not public (no
   `/wp-abilities/v1` listing, not on the Adapter's default server). On WordPress before
   6.9 the routes call the callbacks directly.
+- Site abilities: abilities of WordPress core or other plugins that the owner lists on the
+  WordPress side (`WPMCP_BRIDGE_ABILITIES` in `wp-config.php` or the
+  `wpmcp_bridge_abilities` filter; none by default, at most 20) become typed tools named
+  after them (`core/get-user-info` → `core_get_user_info`), with their own input schema.
+  Read-only ones need `wp:read`; any other needs `wp:write`, counts against the live
+  budget, is marked destructive and goes into the digest. They run as the integration user
+  (bridge routes `GET /abilities`, `POST /abilities/run`), so its fixed capabilities still
+  apply. Fields named `content` in their results are answered as `body`.
 
 ## [0.6.1] - 2026-11-19
 

@@ -60,6 +60,10 @@ provision() {
   wp rewrite structure '/%postname%/' --hard
   wp eval-file /dev-scripts/charset.php
   wp eval-file /dev-scripts/provision.php
+  # Site abilities the integration tests run through wpmcp (one needs manage_options, one
+  # does not exist): see wordpress/mu-plugins/wpmcp-bridge/site-abilities.php.
+  wp config set WPMCP_BRIDGE_ABILITIES 'core/get-user-info,core/get-site-info,example/missing' \
+    --type=constant --quiet
   # The integration user, as in production: an editor whose real capabilities come from
   # the bridge plugin, with one Application Password kept in var/ (git-ignored).
   if ! wp user get wpmcp --field=ID >/dev/null 2>&1; then

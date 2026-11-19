@@ -39,8 +39,11 @@ class FakeWordPress:
         self.responses: dict[str, httpx.Response] = {}
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
-        self.requests.append(request)
         path = request.url.path.removeprefix("/wp-json/wpmcp/v1")
+        if path == "/abilities" and path not in self.responses:
+            # The site-ability list, read on tools/list: none unless a test sets some.
+            return httpx.Response(200, json={"items": []})
+        self.requests.append(request)
         if path in self.responses:
             return self.responses[path]
         return httpx.Response(200, json={"id": 501, "path": path})
