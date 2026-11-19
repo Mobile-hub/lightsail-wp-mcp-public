@@ -8,7 +8,7 @@
 #   3. the site address fixed to https://WP_HOST (the image derives it from the request's
 #      Host header, over http);
 #   4. the site's own vhosts (port 80: ACME and redirect; 443: TLS, other names redirected)
-#      and the permalink rules in Apache's configuration (the image reads no .htaccess);
+#      and the permalink rules in Apache's configuration, with .htaccess turned off;
 #   5. a Let's Encrypt certificate for WP_HOST and WP_ALIASES once they point here (before
 #      that, a copied certificate from bin/migrate-site is used if there is one).
 # Idempotent: run it again after the DNS switch to get certbot's certificate.
@@ -47,6 +47,12 @@ echo "$(served_php) $version"
 php_patched "$version" ||
   { echo "PHP $version lacks the fixes for CVE-2026-109618/109619: not continuing" >&2; exit 1; }
 echo "fixes listed in the package changelog: $(zgrep -cE 'CVE-2026-10961[89]' "/usr/share/doc/php$(php_branch)-common/changelog.Debian.gz" 2>/dev/null || echo 0)"
+# The optional modules WordPress's Site Health asks for: intl (international domain names,
+# locale-aware text) and imagick (image sizes and formats GD lacks). Debian's ImageMagick
+# policy refuses PostScript, PDF and XPS input; images that come through wpmcp were
+# already re-encoded by the image worker.
+apt_install "php$(php_branch)-intl" "php$(php_branch)-imagick"
+echo "modules: $(php -m | grep -xE 'intl|imagick' | tr '\n' ' ')"
 php_hardening_ini >"$tmp"
 if cmp -s "$tmp" "$(served_php_ini_dir)/99-wpmcp.ini"; then
   echo "hardening ini unchanged"
@@ -94,8 +100,12 @@ echo "world-writable entries fixed: $writable; $(stat -c '%A %U:%G' "$(dirname "
 step "apache: the site's vhosts and permalinks"
 a2enmod -q headers ssl rewrite >/dev/null
 cat >"$tmp" <<CONF
-# WordPress permalinks (written by lightsail-wp-mcp setup.debian.sh).
+# WordPress permalinks (written by lightsail-wp-mcp setup.debian.sh). .htaccess is off here:
+# the image allows it under /var/www, and a .htaccess with rewrite rules of its own (as
+# LiteSpeed Cache writes) replaces these, so every permalink and the REST API answer 404;
+# it would also let PHP rewrite the web server's configuration.
 <Directory $WP>
+  AllowOverride None
   RewriteEngine On
   RewriteBase /
   RewriteRule ^index\.php$ - [L]
