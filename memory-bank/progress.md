@@ -58,6 +58,11 @@
 - 2026-11-19 — 0.10.0: `import_image_from_url` from owner-listed image hosts
   (`WPMCP_IMAGE_HOSTS`, checked by the service and again by the worker against its own
   copy, redirects included). 511 tests, 99% coverage.
+- 2026-11-19 — 0.10.1: up to 50 image hosts. The deployment's list was built from
+  evidence: each candidate site's own pages were read for the hosts their images come
+  from, and one image per host was fetched and re-encoded. Many shops (Fnac, El Corte
+  Inglés, Wook, Bertrand, Waterstones, Bol...) and some publishers answer automated
+  clients with 403/406/429; they stay off until a refused address shows a host that works.
 
 ## Not done
 - Connecting Claude.

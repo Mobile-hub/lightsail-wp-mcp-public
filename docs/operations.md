@@ -189,17 +189,23 @@ WPMCP_IMAGE_HOSTS=covers.example.org,.images.example.net   # in the site file, t
 ```
 
 A name is that host only; `.example.net` is any subdomain of it (not `example.net`
-itself); `img*.example.net` lets `*` stand for part of one label. At most 20, no IP
+itself); `img*.example.net` lets `*` stand for part of one label. At most 50, no IP
 addresses, no whole endings such as `.org`. Every redirect must land on a listed host too,
 so list the host an image server redirects to as well. Open Library's covers by ISBN
 (`https://covers.openlibrary.org/b/isbn/<ISBN>-L.jpg`) often go through `archive.org` to
 one of its servers: `WPMCP_IMAGE_HOSTS=covers.openlibrary.org,archive.org,ia*.us.archive.org`. Choose image servers of
 catalogues, publishers and booksellers, whose request logs nobody else reads: never a host
 where anyone can put files or see who fetched them (file sharing, generic cloud storage
-such as `.s3.amazonaws.com`, URL shorteners), which would let a manipulated model send data
+such as `.s3.amazonaws.com`, shop platforms such as `cdn.shopify.com`, URL shorteners), which would let a manipulated model send data
 out in an address. The deploy prints `image hosts: ...` and writes the worker's own copy
 to `wpmcp-media@.service.d/hosts.conf`; the service's copy is in `/etc/wpmcp/wpmcp.env`.
 After a change, refresh the tools in the client: the tool's description lists the hosts.
+
+To find a shop's or publisher's image host, look at where the images of one of its book
+pages come from (often a CDN such as `imagessl0.example.com`, not the shop's own name).
+Some sites refuse automated clients (403, 406 or 429 for the worker too): listing them
+does not help. When the tool refuses an address, its answer names the host, which is the
+evidence for adding it.
 
 ## Live changes
 

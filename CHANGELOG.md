@@ -6,6 +6,12 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-11-19
+
+### Changed
+- `WPMCP_IMAGE_HOSTS` takes up to 50 hosts (was 20): publishers and bookshops serve covers
+  from their own CDNs, so a site that takes covers from several countries needs more.
+
 ## [0.10.0] - 2026-11-19
 
 ### Added

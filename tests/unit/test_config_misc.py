@@ -223,7 +223,7 @@ def test_image_hosts_are_parsed_and_normalised():
         "covers.example.org:443",
         "*",
         "a b.example.org",
-        ",".join(f"h{n}.example.org" for n in range(21)),
+        ",".join(f"h{n}.example.org" for n in range(51)),
     ],
 )
 def test_image_hosts_refused(value):

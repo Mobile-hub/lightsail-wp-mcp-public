@@ -76,7 +76,7 @@ def load_wp_password(env: dict[str, str]) -> str:
 _HOST_PATTERN = re.compile(
     r"^\.?(?:[a-z0-9*](?:[a-z0-9*-]*[a-z0-9*])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{2,59})$"
 )
-MAX_IMAGE_HOSTS = 20
+MAX_IMAGE_HOSTS = 50
 
 
 def parse_image_hosts(value: str | None) -> tuple[str, ...]:
