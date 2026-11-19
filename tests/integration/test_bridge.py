@@ -792,3 +792,59 @@ def test_insert_image_into_a_published_item_is_a_live_edit(writer, created, imag
         assert refused["isError"] is True and "is protected" in str(refused)
     finally:
         dev_wp("option", "update", "page_on_front", "0")
+
+
+# --- the bridge's operations as abilities (0.7.0)
+
+
+def dev_eval(code: str) -> str:
+    """PHP in the dev stack (WP-CLI eval as the site admin); returns its output."""
+    command = [str(ROOT / "bin" / "dev"), "wp", "eval", code]
+    done = subprocess.run(command, check=True, capture_output=True, text=True)  # noqa: S603
+    return done.stdout
+
+
+AS_INTEGRATION_USER = 'wp_set_current_user( get_user_by( "login", "wpmcp" )->ID );'
+
+
+def test_every_operation_is_an_ability_with_the_tools_annotations(writer):
+    abilities = json.loads(
+        dev_eval(
+            "echo wp_json_encode( array_map( fn ( $a ) => $a->get_meta(),"
+            ' wp_get_abilities( array( "namespace" => "wpmcp" ) ) ) );'
+        )
+    )
+    client, token = writer
+    tools = {t["name"]: t for t in rpc_result(rpc(client, token, "tools/list"))["tools"]}
+    python_only = {"get_connection_info", "import_image", "request_image_upload"}
+    names = {name.removeprefix("wpmcp/").replace("-", "_") for name in abilities}
+    assert names == set(tools) - python_only
+    for name, meta in abilities.items():
+        hints = tools[name.removeprefix("wpmcp/").replace("-", "_")]["annotations"]
+        expected = (hints["readOnlyHint"], hints["destructiveHint"], hints["idempotentHint"])
+        found = meta["annotations"]
+        assert (found["readonly"], found["destructive"], found["idempotent"]) == expected, name
+        assert meta["show_in_rest"] is False and meta["public"] is False, name
+
+
+def test_routes_run_through_the_abilities(writer, created):
+    draft = tool(writer, "create_draft", type="post", lang="en", title="wpmcp ability test")
+    created["post"].append(draft["id"])
+    item = draft["id"]
+    php = f"""{AS_INTEGRATION_USER}
+    add_action( "wp_ability_invoked", function ( $name ) {{ echo "invoked $name\n"; }} );
+    $r = rest_do_request( new WP_REST_Request( "GET", "/wpmcp/v1/content/{item}" ) );
+    $v = $r->get_data()["version"]; echo "rest $v\n";
+    $a = wp_get_ability( "wpmcp/get-content" );
+    $v = $a->execute( array( "id" => {item} ) )["version"]; echo "direct $v\n";
+    foreach ( array( array( "id" => 0 ), array( "id" => {item}, "x" => 1 ) ) as $bad ) {{
+        $e = $a->execute( $bad )->get_error_code(); echo "bad $e\n";
+    }}
+    wp_set_current_user( 0 );
+    $e = $a->execute( array( "id" => {item} ) )->get_error_code(); echo "anon $e\n";
+    """
+    lines = dev_eval(php).splitlines()
+    assert "invoked wpmcp/get-content" in lines
+    assert f"rest {draft['version']}" in lines and f"direct {draft['version']}" in lines
+    assert lines.count("bad ability_invalid_input") == 2
+    assert "anon ability_invalid_permissions" in lines

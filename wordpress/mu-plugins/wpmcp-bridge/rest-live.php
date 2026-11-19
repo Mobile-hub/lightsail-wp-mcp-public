@@ -23,57 +23,76 @@ const WPMCP_BRIDGE_LOG_OPTION   = 'wpmcp_live_log';
 const WPMCP_BRIDGE_LOG_MAX      = 200;
 const WPMCP_BRIDGE_DIGEST_EVENT = 'wpmcp_live_digest';
 
-add_action( 'rest_api_init', 'wpmcp_register_live_routes' );
-
-function wpmcp_register_live_routes(): void {
+/** The live operations: routes of wpmcp/v1 and abilities (see abilities.php). */
+function wpmcp_live_operations(): array {
 	$version = array( 'type' => 'string', 'pattern' => '^[0-9a-f]{16}$', 'required' => true );
 	$id      = array( 'type' => 'integer', 'minimum' => 1, 'required' => true );
-	$item    = static fn ( string $path, string $callback, array $args = array() ) => register_rest_route(
-		WPMCP_BRIDGE_NS,
-		'/content/(?P<id>\d+)/' . $path,
-		array(
-			'methods'             => 'POST',
-			'callback'            => $callback,
-			'permission_callback' => 'wpmcp_can_edit_item',
-			'args'                => $args + array( 'id' => $id ),
-		)
+	// (ability, label, description, path, callback, args, destructive, idempotent)
+	$item = static fn ( string $name, string $label, string $description, string $path, string $callback, array $args, bool $destructive, bool $idempotent ) => array(
+		'ability'             => "wpmcp/$name",
+		'label'               => $label,
+		'description'         => $description,
+		'route'               => '/content/(?P<id>\d+)/' . $path,
+		'methods'             => 'POST',
+		'callback'            => $callback,
+		'permission_callback' => 'wpmcp_can_edit_item',
+		'annotations'         => wpmcp_annotations( false, $destructive, $idempotent ),
+		'args'                => $args + array( 'id' => $id ),
 	);
-	$item( 'publish', 'wpmcp_rest_publish', array( 'expected_version' => $version ) );
-	$item(
-		'schedule',
-		'wpmcp_rest_schedule',
-		array(
-			'expected_version' => $version,
-			'publish_at'       => array( 'type' => 'string', 'maxLength' => 40, 'required' => true ),
-		)
-	);
-	$item( 'unpublish', 'wpmcp_rest_unpublish', array( 'expected_version' => $version ) );
-	$item(
-		'live',
-		'wpmcp_rest_live_update',
-		array(
-			'expected_version' => $version,
-			'allow_shrink'     => array( 'type' => 'boolean' ),
-		) + wpmcp_content_field_args()
-	);
-	$item(
-		'restore-revision',
-		'wpmcp_rest_restore_revision',
-		array(
-			'expected_version' => $version,
-			'revision_id'      => $id,
-		)
-	);
-	$item( 'trash', 'wpmcp_rest_trash', array( 'expected_version' => $version ) );
-	$item( 'untrash', 'wpmcp_rest_untrash' );
 
-	register_rest_route(
-		WPMCP_BRIDGE_NS,
-		'/translations',
+	return array(
+		$item( 'publish-content', 'Publish', 'Publish a draft or pending post or page now, against the version read.', 'publish', 'wpmcp_rest_publish', array( 'expected_version' => $version ), false, true ),
+		$item(
+			'schedule-content',
+			'Schedule publication',
+			'Schedule a draft, pending or scheduled item for a time between 5 minutes and a year ahead (UTC).',
+			'schedule',
+			'wpmcp_rest_schedule',
+			array(
+				'expected_version' => $version,
+				'publish_at'       => array( 'type' => 'string', 'maxLength' => 40, 'required' => true ),
+			),
+			false,
+			true
+		),
+		$item( 'unpublish-content', 'Unpublish', 'Take a published or scheduled item back to draft. Refused for protected pages.', 'unpublish', 'wpmcp_rest_unpublish', array( 'expected_version' => $version ), true, true ),
+		$item(
+			'update-published-content',
+			'Edit published content',
+			'Change a published, scheduled or private item; the state before is saved as a revision and returned. Refused for protected pages.',
+			'live',
+			'wpmcp_rest_live_update',
+			array(
+				'expected_version' => $version,
+				'allow_shrink'     => array( 'type' => 'boolean' ),
+			) + wpmcp_content_field_args(),
+			true,
+			true
+		),
+		$item(
+			'restore-revision',
+			'Restore a revision',
+			"Put a post or page's title, content and excerpt back to a saved revision; the current state is saved first.",
+			'restore-revision',
+			'wpmcp_rest_restore_revision',
+			array(
+				'expected_version' => $version,
+				'revision_id'      => $id,
+			),
+			true,
+			true
+		),
+		$item( 'trash-content', 'Move to trash', 'Move a post or page to the trash (never a permanent delete). Refused for protected pages.', 'trash', 'wpmcp_rest_trash', array( 'expected_version' => $version ), true, true ),
+		$item( 'restore-from-trash', 'Restore from trash', 'Bring a trashed post or page back, as a draft.', 'untrash', 'wpmcp_rest_untrash', array(), false, false ),
 		array(
+			'ability'             => 'wpmcp/link-translations',
+			'label'               => 'Link translations',
+			'description'         => 'Link existing posts or pages as translations of each other (language => ID). Existing links are kept.',
+			'route'               => '/translations',
 			'methods'             => 'POST',
 			'callback'            => 'wpmcp_rest_link_translations',
 			'permission_callback' => 'wpmcp_can_read',
+			'annotations'         => wpmcp_annotations( false, true, true ),
 			'args'                => array(
 				'items' => array(
 					'type'                 => 'object',
@@ -83,7 +102,7 @@ function wpmcp_register_live_routes(): void {
 					'additionalProperties' => array( 'type' => 'integer', 'minimum' => 1 ),
 				),
 			),
-		)
+		),
 	);
 }
 

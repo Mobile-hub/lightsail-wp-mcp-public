@@ -26,8 +26,6 @@ const WPMCP_BRIDGE_IMAGE_MIMES = array(
 	'webp'         => 'image/webp',
 );
 
-add_action( 'rest_api_init', 'wpmcp_register_write_routes' );
-
 /** The editable fields of a post or page, as REST argument schemas. */
 function wpmcp_content_field_args(): array {
 	$text     = static fn ( int $max ) => array( 'type' => 'string', 'maxLength' => $max );
@@ -59,51 +57,63 @@ function wpmcp_content_field_args(): array {
 	);
 }
 
-function wpmcp_register_write_routes(): void {
+/** The write operations: routes of wpmcp/v1 and abilities (see abilities.php). */
+function wpmcp_write_operations(): array {
 	$text      = static fn ( int $max ) => array( 'type' => 'string', 'maxLength' => $max );
 	$id        = array( 'type' => 'integer', 'minimum' => 1, 'required' => true );
 	$lang      = array( 'type' => 'string', 'pattern' => '^[a-z]{2,3}$', 'required' => true );
 	$reference = array( 'type' => 'integer', 'minimum' => 1 );
+	$version   = array( 'type' => 'string', 'pattern' => '^[0-9a-f]{16}$', 'required' => true );
 	$fields    = wpmcp_content_field_args();
+	$media     = array(
+		'title'   => $text( 200 ),
+		'alt'     => $text( 500 ),
+		'caption' => $text( 2000 ),
+	);
 
-	register_rest_route(
-		WPMCP_BRIDGE_NS,
-		'/content',
+	return array(
 		array(
+			'ability'             => 'wpmcp/create-draft',
+			'label'               => 'Create a draft',
+			'description'         => 'A draft post or page in one language, optionally linked as the translation of an existing item. Never publishes.',
+			'route'               => '/content',
 			'methods'             => 'POST',
 			'callback'            => 'wpmcp_rest_content_create',
 			'permission_callback' => 'wpmcp_can_create',
+			'annotations'         => wpmcp_annotations( false, false, false ),
 			'args'                => $fields + array(
 				'type'           => array( 'type' => 'string', 'enum' => WPMCP_BRIDGE_TYPES, 'required' => true ),
 				'lang'           => $lang,
 				'translation_of' => $reference,
 			),
-		)
-	);
-	register_rest_route(
-		WPMCP_BRIDGE_NS,
-		'/content/(?P<id>\d+)',
+		),
 		array(
+			'ability'             => 'wpmcp/update-draft',
+			'label'               => 'Edit a draft',
+			'description'         => 'Change a draft or pending post or page against the version read. Only the fields given change; content replaces the whole body.',
+			'route'               => '/content/(?P<id>\d+)',
 			'methods'             => 'POST',
 			'callback'            => 'wpmcp_rest_content_update',
 			'permission_callback' => 'wpmcp_can_edit_item',
+			'annotations'         => wpmcp_annotations( false, false, true ),
 			'args'                => $fields + array(
 				'id'               => $id,
-				'expected_version' => array( 'type' => 'string', 'pattern' => '^[0-9a-f]{16}$', 'required' => true ),
+				'expected_version' => $version,
 				'allow_shrink'     => array( 'type' => 'boolean' ),
 			),
-		)
-	);
-	register_rest_route(
-		WPMCP_BRIDGE_NS,
-		'/content/(?P<id>\d+)/insert-image',
+		),
 		array(
+			'ability'             => 'wpmcp/insert-image',
+			'label'               => 'Insert an image',
+			'description'         => 'Put an image from the media library into the body of a post or page without rewriting the rest of it. A live edit on published items.',
+			'route'               => '/content/(?P<id>\d+)/insert-image',
 			'methods'             => 'POST',
 			'callback'            => 'wpmcp_rest_insert_image',
 			'permission_callback' => 'wpmcp_can_edit_item',
+			'annotations'         => wpmcp_annotations( false, true, true ),
 			'args'                => array(
 				'id'               => $id,
-				'expected_version' => array( 'type' => 'string', 'pattern' => '^[0-9a-f]{16}$', 'required' => true ),
+				'expected_version' => $version,
 				'media_id'         => $id,
 				'position'         => array( 'type' => 'string', 'enum' => array( 'start', 'end', 'after_text' ), 'required' => true ),
 				'anchor_text'      => $text( 200 ),
@@ -111,15 +121,16 @@ function wpmcp_register_write_routes(): void {
 				'caption'          => $text( 500 ),
 				'size'             => array( 'type' => 'string', 'enum' => array( 'medium', 'large', 'full' ), 'default' => 'large' ),
 			),
-		)
-	);
-	register_rest_route(
-		WPMCP_BRIDGE_NS,
-		'/terms',
+		),
 		array(
+			'ability'             => 'wpmcp/create-category',
+			'label'               => 'Create a category',
+			'description'         => 'A category in one language, optionally the translation of another.',
+			'route'               => '/terms',
 			'methods'             => 'POST',
 			'callback'            => 'wpmcp_rest_term_create',
 			'permission_callback' => static fn () => current_user_can( 'manage_categories' ),
+			'annotations'         => wpmcp_annotations( false, false, false ),
 			'args'                => array(
 				'name'           => $text( 200 ) + array( 'required' => true ),
 				'lang'           => $lang,
@@ -127,32 +138,27 @@ function wpmcp_register_write_routes(): void {
 				'description'    => $text( 2000 ),
 				'translation_of' => $reference,
 			),
-		)
-	);
-	$media = array(
-		'title'   => $text( 200 ),
-		'alt'     => $text( 500 ),
-		'caption' => $text( 2000 ),
-	);
-	register_rest_route(
-		WPMCP_BRIDGE_NS,
-		'/media',
+		),
+		// The upload takes a file: a route only, not an ability (abilities take JSON input).
 		array(
+			'ability'             => null,
+			'route'               => '/media',
 			'methods'             => 'POST',
 			'callback'            => 'wpmcp_rest_media_upload',
 			'permission_callback' => static fn () => current_user_can( 'upload_files' ),
 			'args'                => $media + array( 'attach_to' => array( 'type' => 'integer', 'minimum' => 0 ) ),
-		)
-	);
-	register_rest_route(
-		WPMCP_BRIDGE_NS,
-		'/media/(?P<id>\d+)',
+		),
 		array(
+			'ability'             => 'wpmcp/update-media',
+			'label'               => 'Edit image details',
+			'description'         => "Change an image's title, alt text or caption. Images are shared by every language and every post that uses them.",
+			'route'               => '/media/(?P<id>\d+)',
 			'methods'             => 'POST',
 			'callback'            => 'wpmcp_rest_media_update',
 			'permission_callback' => 'wpmcp_can_edit_media',
+			'annotations'         => wpmcp_annotations( false, true, true ),
 			'args'                => $media + array( 'id' => $id ),
-		)
+		),
 	);
 }
 

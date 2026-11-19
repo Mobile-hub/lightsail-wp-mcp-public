@@ -22,15 +22,17 @@ const WPMCP_BRIDGE_MENU_MAX_ITEMS  = 60;
 const WPMCP_BRIDGE_PLL_SWITCHER    = '#pll_switcher';
 const WPMCP_BRIDGE_ITEM_META_KEEP  = array( '_pll_menu_item' );
 
-add_action( 'rest_api_init', 'wpmcp_register_menu_routes' );
-
-function wpmcp_register_menu_routes(): void {
+/** The menu changes: routes of wpmcp/v1 and abilities (see abilities.php). */
+function wpmcp_menu_operations(): array {
 	$menu_id = array( 'type' => 'integer', 'minimum' => 1, 'required' => true );
-	register_rest_route(
-		WPMCP_BRIDGE_NS,
-		'/menus/(?P<menu_id>\d+)',
+	return array(
 		array(
+			'ability'             => 'wpmcp/apply-menu',
+			'label'               => 'Change a menu',
+			'description'         => 'Replace the items of a menu shown by a theme location, against its version; the previous items are saved for restore-menu.',
+			'route'               => '/menus/(?P<menu_id>\d+)',
 			'methods'             => 'POST',
+			'annotations'         => wpmcp_annotations( false, true, true ),
 			'callback'            => 'wpmcp_rest_menu_apply',
 			'permission_callback' => 'wpmcp_can_read',
 			'args'                => array(
@@ -54,17 +56,18 @@ function wpmcp_register_menu_routes(): void {
 					),
 				),
 			),
-		)
-	);
-	register_rest_route(
-		WPMCP_BRIDGE_NS,
-		'/menus/(?P<menu_id>\d+)/restore',
+		),
 		array(
+			'ability'             => 'wpmcp/restore-menu',
+			'label'               => 'Restore a menu',
+			'description'         => 'Put a menu back to the items saved before its last change by apply-menu.',
+			'route'               => '/menus/(?P<menu_id>\d+)/restore',
 			'methods'             => 'POST',
+			'annotations'         => wpmcp_annotations( false, true, false ),
 			'callback'            => 'wpmcp_rest_menu_restore',
 			'permission_callback' => 'wpmcp_can_read',
 			'args'                => array( 'menu_id' => $menu_id ),
-		)
+		),
 	);
 }
 

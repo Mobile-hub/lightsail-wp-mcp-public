@@ -17,3 +17,4 @@ require_once __DIR__ . '/wpmcp-bridge/rest-read.php';
 require_once __DIR__ . '/wpmcp-bridge/rest-write.php';
 require_once __DIR__ . '/wpmcp-bridge/rest-live.php';
 require_once __DIR__ . '/wpmcp-bridge/rest-menus.php';
+require_once __DIR__ . '/wpmcp-bridge/abilities.php';

@@ -5,7 +5,8 @@
  * usable shape; these routes do, read-only. Site-specific fields can be added to
  * get_content with the wpmcp_bridge_extra_fields filter (see helpers.php).
  *
- * Every route needs edit_posts; single items need edit_post on that item.
+ * Every route needs edit_posts; single items need edit_post on that item. Each one is also
+ * an ability (wpmcp/get-content, ...): see abilities.php.
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -13,106 +14,109 @@ defined( 'ABSPATH' ) || exit;
 const WPMCP_BRIDGE_NS       = 'wpmcp/v1';
 const WPMCP_BRIDGE_PER_PAGE = 50;
 
-add_action( 'rest_api_init', 'wpmcp_register_read_routes' );
-
 function wpmcp_can_read(): bool {
 	return current_user_can( 'edit_posts' );
 }
 
-function wpmcp_register_read_routes(): void {
+/** The read operations: routes of wpmcp/v1 and abilities (see abilities.php). */
+function wpmcp_read_operations(): array {
 	$read = array(
 		'methods'             => WP_REST_Server::READABLE,
 		'permission_callback' => 'wpmcp_can_read',
+		'annotations'         => wpmcp_annotations( true, false, true ),
 	);
-	$id   = array(
-		'id' => array( 'type' => 'integer', 'minimum' => 1, 'required' => true ),
-	);
+	$item = array(
+		'permission_callback' => 'wpmcp_can_edit_item',
+		'args'                => array(
+			'id' => array( 'type' => 'integer', 'minimum' => 1, 'required' => true ),
+		),
+	) + $read;
 	$page = array(
 		'page'     => array( 'type' => 'integer', 'minimum' => 1, 'default' => 1 ),
 		'per_page' => array( 'type' => 'integer', 'minimum' => 1, 'maximum' => WPMCP_BRIDGE_PER_PAGE, 'default' => 20 ),
 	);
 	$lang = array( 'type' => 'string', 'default' => '', 'pattern' => '^[a-z]{0,3}$' );
 
-	register_rest_route( WPMCP_BRIDGE_NS, '/overview', $read + array( 'callback' => 'wpmcp_rest_overview' ) );
-
-	register_rest_route(
-		WPMCP_BRIDGE_NS,
-		'/content',
-		$read + array(
-			'callback' => 'wpmcp_rest_content_list',
-			'args'     => $page + array(
-				'type'           => array( 'type' => 'string', 'enum' => array( 'post', 'page', 'any' ), 'default' => 'any' ),
-				'status'         => array( 'type' => 'string', 'enum' => array_merge( WPMCP_BRIDGE_STATUSES, array( 'any' ) ), 'default' => 'any' ),
-				'lang'           => $lang,
-				'search'         => array( 'type' => 'string', 'default' => '', 'maxLength' => 200 ),
-				'category'       => array( 'type' => 'integer', 'minimum' => 0, 'default' => 0 ),
+	return array(
+		array(
+			'ability'     => 'wpmcp/get-site-overview',
+			'label'       => 'Site overview',
+			'description' => 'Name, URL, languages, post and page counts per status and language, front page, timezone and versions.',
+			'route'       => '/overview',
+			'callback'    => 'wpmcp_rest_overview',
+		) + $read,
+		array(
+			'ability'     => 'wpmcp/search-content',
+			'label'       => 'Search posts and pages',
+			'description' => 'Posts and pages by words, language, status or category, or those still missing a translation: plain-text excerpts, languages and translation IDs.',
+			'route'       => '/content',
+			'callback'    => 'wpmcp_rest_content_list',
+			'args'        => $page + array(
+				'type'            => array( 'type' => 'string', 'enum' => array( 'post', 'page', 'any' ), 'default' => 'any' ),
+				'status'          => array( 'type' => 'string', 'enum' => array_merge( WPMCP_BRIDGE_STATUSES, array( 'any' ) ), 'default' => 'any' ),
+				'lang'            => $lang,
+				'search'          => array( 'type' => 'string', 'default' => '', 'maxLength' => 200 ),
+				'category'        => array( 'type' => 'integer', 'minimum' => 0, 'default' => 0 ),
 				'untranslated_to' => $lang,
-				'orderby'        => array( 'type' => 'string', 'enum' => array( 'date', 'modified', 'title', 'relevance' ), 'default' => 'date' ),
-				'order'          => array( 'type' => 'string', 'enum' => array( 'asc', 'desc' ), 'default' => 'desc' ),
+				'orderby'         => array( 'type' => 'string', 'enum' => array( 'date', 'modified', 'title', 'relevance' ), 'default' => 'date' ),
+				'order'           => array( 'type' => 'string', 'enum' => array( 'asc', 'desc' ), 'default' => 'desc' ),
 			),
-		)
-	);
-
-	register_rest_route(
-		WPMCP_BRIDGE_NS,
-		'/content/(?P<id>\d+)',
+		) + $read,
 		array(
-			'methods'             => WP_REST_Server::READABLE,
-			'callback'            => 'wpmcp_rest_content_get',
-			'permission_callback' => 'wpmcp_can_edit_item',
-			'args'                => $id,
-		)
-	);
-
-	register_rest_route(
-		WPMCP_BRIDGE_NS,
-		'/content/(?P<id>\d+)/revisions',
+			'ability'     => 'wpmcp/get-content',
+			'label'       => 'Read a post or page',
+			'description' => 'One post or page: body, excerpt, status, language and translations, categories, featured image, SEO fields, and the version that changes must name.',
+			'route'       => '/content/(?P<id>\d+)',
+			'callback'    => 'wpmcp_rest_content_get',
+		) + $item,
 		array(
-			'methods'             => WP_REST_Server::READABLE,
-			'callback'            => 'wpmcp_rest_revisions',
-			'permission_callback' => 'wpmcp_can_edit_item',
-			'args'                => $id,
-		)
-	);
-
-	register_rest_route(
-		WPMCP_BRIDGE_NS,
-		'/terms',
-		$read + array(
-			'callback' => 'wpmcp_rest_terms',
-			'args'     => array(
+			'ability'     => 'wpmcp/list-revisions',
+			'label'       => 'List revisions',
+			'description' => 'Saved revisions of a post or page, newest first, with dates and sizes.',
+			'route'       => '/content/(?P<id>\d+)/revisions',
+			'callback'    => 'wpmcp_rest_revisions',
+		) + $item,
+		array(
+			'ability'     => 'wpmcp/list-terms',
+			'label'       => 'List categories or tags',
+			'description' => 'Categories or tags, with language, number of posts and translation links.',
+			'route'       => '/terms',
+			'callback'    => 'wpmcp_rest_terms',
+			'args'        => array(
 				'taxonomy' => array( 'type' => 'string', 'enum' => array( 'category', 'post_tag' ), 'default' => 'category' ),
 				'lang'     => $lang,
 				'search'   => array( 'type' => 'string', 'default' => '', 'maxLength' => 200 ),
 			),
-		)
-	);
-
-	register_rest_route(
-		WPMCP_BRIDGE_NS,
-		'/media',
-		$read + array(
-			'callback' => 'wpmcp_rest_media',
-			'args'     => $page + array(
+		) + $read,
+		array(
+			'ability'     => 'wpmcp/list-media',
+			'label'       => 'List images',
+			'description' => 'Images in the media library: title, alt text, caption, size and URL.',
+			'route'       => '/media',
+			'callback'    => 'wpmcp_rest_media',
+			'args'        => $page + array(
 				'search' => array( 'type' => 'string', 'default' => '', 'maxLength' => 200 ),
 				'parent' => array( 'type' => 'integer', 'minimum' => 0, 'default' => 0 ),
 			),
-		)
-	);
-
-	// Defined in rest-menus.php, with the routes that change menus.
-	register_rest_route( WPMCP_BRIDGE_NS, '/menus', $read + array( 'callback' => 'wpmcp_rest_menus' ) );
-
-	register_rest_route(
-		WPMCP_BRIDGE_NS,
-		'/changes',
-		$read + array(
-			'callback' => 'wpmcp_rest_changes',
-			'args'     => array(
+		) + $read,
+		array(
+			'ability'     => 'wpmcp/get-menus',
+			'label'       => 'Show menus',
+			'description' => 'Navigation menus per theme location and language, with their items and versions.',
+			'route'       => '/menus',
+			'callback'    => 'wpmcp_rest_menus', // in rest-menus.php
+		) + $read,
+		array(
+			'ability'     => 'wpmcp/get-recent-changes',
+			'label'       => 'Recent changes',
+			'description' => 'Posts and pages created, edited, published or trashed recently, newest first.',
+			'route'       => '/changes',
+			'callback'    => 'wpmcp_rest_changes',
+			'args'        => array(
 				'since' => array( 'type' => 'string', 'default' => '', 'maxLength' => 40 ),
 				'limit' => array( 'type' => 'integer', 'minimum' => 1, 'maximum' => WPMCP_BRIDGE_PER_PAGE, 'default' => 30 ),
 			),
-		)
+		) + $read,
 	);
 }
 

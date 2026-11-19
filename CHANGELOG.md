@@ -12,6 +12,13 @@ All notable changes are listed here. The format follows
 - `idempotentHint` on every tool: true for reads and for changes guarded by
   `expected_version` (a repeat is refused as stale), false for creations, uploads,
   `restore_menu` and `restore_from_trash`.
+- Bridge: every operation is also an ability of the WordPress Abilities API
+  (`wpmcp/get-content`, `wpmcp/update-draft`, ... 23 in all, category `wpmcp`), defined
+  once per file with its route. The routes run the ability, so every caller goes through
+  the same input schema, permission check and core lifecycle hooks; WP-CLI, WordPress's AI
+  client or an MCP Adapter server can use them too. They are not public (no
+  `/wp-abilities/v1` listing, not on the Adapter's default server). On WordPress before
+  6.9 the routes call the callbacks directly.
 
 ## [0.6.1] - 2026-11-19
 
