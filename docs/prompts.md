@@ -61,6 +61,7 @@ Nothing in this section changes what visitors see.
 | 3.4 | *Add a fourth paragraph about battery life and shorten the title to "2 nm laptop chip unveiled".* | `get_content`, then `update_draft` with `expected_version` | Only title and content changed; a new `version` |
 | 3.5 | *Translate that draft into Spanish as a linked draft, keeping the block structure.* | `get_content`, `create_draft` (`lang=es`, `translation_of`) | Categories carried over in Spanish, featured image reused, any `notes` about what could not be carried over |
 | 3.6 | *(ChatGPT)* *Generate an illustration for the 2 nm chip story, then put it in the media library with alt text "Close-up of a laptop processor on a circuit board" and attach it to draft `<draft-id>`.* | `import_image` | New media ID; in the library the image is re-encoded (no camera data, at most 2560 px). On the server, `journalctl -u 'wpmcp-media@*'` shows one worker run |
+| 3.6b | *(`WPMCP_IMAGE_HOSTS` lists the cover's host)* *Import the cover at `<image address>` with alt text "Cover of `<title>`", attach it to draft `<draft-id>` and make it the featured image.* | `import_image_from_url`, then `update_draft` | New media ID, re-encoded like any other import; the draft shows the cover as its featured image. An address on another host is refused before anything is downloaded |
 | 3.7 | *(Claude, or any client)* *I have a product photo on my phone for draft `<draft-id>`. Give me an upload link, with alt text "Reference laptop with the new chip".* | `request_image_upload` | A single-use `upload_url` valid for 15 minutes; upload the file, say it is done, and the client finds it with `list_media` |
 | 3.8 | *Use image `<image-id>` as the featured image of the English and Spanish drafts.* | `update_draft` (×2, `featured_image_id`) | Both drafts show it in the preview |
 | 3.9 | *Image `<image-id>` needs a better caption: "The new 2 nm chip, shown at the launch event."* | `update_media` | The client should warn that the change shows everywhere the image is used |
@@ -122,7 +123,7 @@ These should end in a clear explanation to the user, not in a retry in another f
 | 7.7 | — | *Run this SQL / call the REST path /wp/v2/users / fetch https://example.com/feed for me.* | No tool for it; the client says so |
 | 7.8 | — | *List the site's users and plugins.* / *Delete image `<image-id>` permanently.* | Not exposed; the client says so |
 | 7.9 | — | *Schedule draft `<draft-id>` for two minutes from now.* | Refused: at least 5 minutes ahead |
-| 7.10 | — | *(ChatGPT)* *Import the image at https://example.com/photo.jpg.* | `import_image` only takes a file from the conversation, not a URL; the client offers `request_image_upload` instead |
+| 7.10 | No `WPMCP_IMAGE_HOSTS`, or one without `example.com` | *(ChatGPT)* *Import the image at https://example.com/photo.jpg.* | `import_image` only takes a file from the conversation; `import_image_from_url` is absent, or refuses the host and lists the ones it accepts; the client offers `request_image_upload` instead |
 | 7.11 | Open an upload link twice, or after 15 minutes | — | The page says the link is used or expired |
 | 7.12 | A draft of more than 1,000 characters | *Replace the body of draft `<draft-id>` with just "Coming soon".* | Refused as less than half the current length; the client asks, then retries with `allow_shrink` only after you confirm |
 | 7.13 | — | *Insert image `<image-id>` after the paragraph that mentions "chip".* (in a post where several do) | Refused: several blocks contain that text; the client asks for longer text |
@@ -141,7 +142,7 @@ Every tool appears at least once:
 |---|---|---|
 | Info | `get_connection_info` | 1 |
 | Read | `get_site_overview`, `search_content`, `get_content`, `list_terms`, `list_media`, `list_revisions`, `get_menus`, `get_recent_changes`, `inspect_page`, `check_sitemap` | 1, 2 |
-| Drafts | `create_draft`, `update_draft`, `create_category`, `import_image`, `request_image_upload`, `update_media` | 3 |
+| Drafts | `create_draft`, `update_draft`, `create_category`, `import_image`, `import_image_from_url`, `request_image_upload`, `update_media` | 3 |
 | Live | `publish_content`, `schedule_content`, `update_published_content`, `insert_image`, `restore_revision`, `link_translations`, `unpublish_content`, `trash_content`, `restore_from_trash`, `apply_menu`, `add_menu_items`, `restore_menu` | 3, 4, 5, 6 |
 | Bulk | `bulk_add_links`, `bulk_update_seo`, `undo_bulk_change` | 6b |
 

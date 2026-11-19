@@ -4,7 +4,7 @@ import pytest
 
 from wpmcp.auth.cidrs import Allowlist, parse
 from wpmcp.auth.ratelimit import SlidingWindow
-from wpmcp.config import Settings, load_secret
+from wpmcp.config import Settings, load_secret, parse_image_hosts
 
 from ..conftest import BASE, SECRET, make_settings
 
@@ -198,3 +198,40 @@ def test_sliding_window_memory_is_bounded(monkeypatch):
     for i in range(40):
         limiter.allow(f"live-{i}", now=100)  # nothing stale to evict: it starts over
         assert len(limiter._hits) <= 11
+
+
+def test_image_hosts_are_parsed_and_normalised():
+    value = " Covers.Example.org., .cdn.example.net,img*.example.com,covers.example.org"
+    hosts = parse_image_hosts(value)
+    assert hosts == ("covers.example.org", ".cdn.example.net", "img*.example.com")
+    assert parse_image_hosts(None) == () and parse_image_hosts("none") == ()
+    env = {"WPMCP_SECRET": SECRET, "WPMCP_PUBLIC_URL": BASE, "WPMCP_DB": ":memory:"}
+    env["WPMCP_IMAGE_HOSTS"] = "covers.example.org"
+    assert Settings.from_env(env).image_hosts == ("covers.example.org",)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        ".org",  # a whole domain ending
+        "*.org",
+        "example*.org",
+        "localhost",
+        "203.0.113.5",
+        "https://covers.example.org",
+        "covers.example.org/path",
+        "covers.example.org:443",
+        "*",
+        "a b.example.org",
+        ",".join(f"h{n}.example.org" for n in range(21)),
+    ],
+)
+def test_image_hosts_refused(value):
+    with pytest.raises(ValueError, match="WPMCP_IMAGE_HOSTS"):
+        parse_image_hosts(value)
+
+
+def test_image_hosts_must_be_normalised_in_settings():
+    with pytest.raises(ValueError, match="image_hosts"):
+        make_settings(image_hosts=("Covers.Example.org",))
+    assert make_settings(image_hosts=(".example.org",)).image_hosts == (".example.org",)

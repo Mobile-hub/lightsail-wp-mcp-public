@@ -36,6 +36,8 @@ class ToolSpec:
     # counts each item; a dry run none). None: one.
     cost: Callable[[dict[str, Any]], int] | None = None
     meta: dict[str, Any] = field(default_factory=dict)
+    # Built at registration when it depends on the settings. None: the function's docstring.
+    description: str | None = None
 
     @property
     def name(self) -> str:

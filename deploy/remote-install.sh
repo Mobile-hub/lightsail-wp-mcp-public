@@ -94,6 +94,16 @@ install -d -m 0755 /etc/systemd/system/wpmcp-media@.service.d
   echo "[Service]"
   awk '/^nameserver/ {print "IPAddressAllow=" $2}' /etc/resolv.conf
 } >/etc/systemd/system/wpmcp-media@.service.d/dns.conf
+# The image hosts of import_image_from_url (WPMCP_IMAGE_HOSTS, the last assignment in
+# wpmcp.env): the worker checks every download and redirect against its own copy, so the
+# service cannot widen the list. bin/deploy has already refused quotes, $ and backslashes.
+image_hosts="$(sed -n 's/^WPMCP_IMAGE_HOSTS="\(.*\)"$/\1/p' /etc/wpmcp/wpmcp.env | tail -n 1)"
+{
+  echo "# Written by remote-install.sh from WPMCP_IMAGE_HOSTS in /etc/wpmcp/wpmcp.env."
+  echo "[Service]"
+  echo "Environment=\"WPMCP_IMAGE_HOSTS=${image_hosts//%/%%}\""
+} >/etc/systemd/system/wpmcp-media@.service.d/hosts.conf
+echo "image hosts: ${image_hosts:-none}"
 systemctl daemon-reload
 systemctl enable --quiet --now wpmcp-media.socket
 previous="$(readlink -f /opt/wpmcp/current 2>/dev/null || true)"

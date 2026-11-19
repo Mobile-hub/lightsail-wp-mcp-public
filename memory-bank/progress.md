@@ -55,6 +55,10 @@
   production: a cache plugin's `.htaccess` took every permalink and `/wp-json` down, and
   AIOSEO's setup wizard installs its vendor's other plugins.
 
+- 2026-11-19 — 0.10.0: `import_image_from_url` from owner-listed image hosts
+  (`WPMCP_IMAGE_HOSTS`, checked by the service and again by the worker against its own
+  copy, redirects included). 511 tests, 99% coverage.
+
 ## Not done
 - Connecting Claude.
 - Trying the live tools against the real products (ChatGPT, Claude).

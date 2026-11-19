@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from typing import Annotated, Any, Literal
+from urllib.parse import unquote, urlsplit
 
 from mcp.server.fastmcp import Context
 from mcp.server.fastmcp.exceptions import ToolError
@@ -19,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..audit import audit
 from ..auth.store import Store
 from ..config import SCOPE_WRITE, Settings
+from ..media.fetch import host_allowed
 from ..media.images import ImageError
 from ..media.uploads import save_image
 from ..media.worker import MediaProcessor
@@ -228,6 +230,50 @@ def register(
         _audit(ctx, "import_image", result)
         return result
 
+    image_hosts_text = ", ".join(
+        f"any subdomain of {host[1:]}" if host.startswith(".") else host
+        for host in settings.image_hosts
+    )
+
+    async def import_image_from_url(
+        ctx: Context,
+        url: Annotated[
+            str,
+            Field(
+                max_length=2048,
+                pattern=r"^https://[^\s]+$",
+                description="https address of the image file itself (as in the page's "
+                "og:image or an <img> src), not of the page that shows it.",
+            ),
+        ],
+        title: Annotated[str | None, Field(max_length=200)] = None,
+        alt_text: MediaText | None = None,
+        caption: MediaText | None = None,
+        attach_to: OptionalId = None,
+    ) -> dict[str, Any]:
+        # The description is built at registration, from the owner's host list. The worker
+        # checks the host again, and every redirect, against its own copy of the list.
+        try:
+            parts = urlsplit(url)
+            host = (parts.hostname or "").lower()
+        except ValueError:
+            host = ""
+        if not host or not host_allowed(host, settings.image_hosts):
+            raise ToolError(
+                f"Refused: {host or 'that address'} is not one of the site's image hosts "
+                f"({image_hosts_text}). Ask the user to upload the image with "
+                "request_image_upload, or to add the host to the site's list."
+            )
+        try:
+            clean = await media.fetch_listed(url)
+            params = {"title": title, "alt": alt_text, "caption": caption, "attach_to": attach_to}
+            name = unquote(parts.path.rsplit("/", 1)[-1]).rsplit(".", 1)[0]
+            result = await save_image(wp, clean, params, name)
+        except (ImageError, WordPressError) as exc:
+            raise ToolError(str(exc)) from exc
+        _audit(ctx, "import_image_from_url", result)
+        return result
+
     async def request_image_upload(
         ctx: Context,
         title: Annotated[str | None, Field(max_length=200)] = None,
@@ -280,6 +326,25 @@ def register(
             meta={"openai/fileParams": ["image"]},
         )
     )
+    if settings.image_hosts:
+        registry.add(
+            ToolSpec(
+                import_image_from_url,
+                title="Import an image from the web",
+                scope=SCOPE_WRITE,
+                open_world=True,
+                description=(
+                    "Put an image from the web (a book cover, say) into the media library, "
+                    "from the address of the image file. Only from these hosts, which the "
+                    f"site owner chose: {image_hosts_text}; any other address is refused, "
+                    "and so is a redirect to one. The image is checked and re-encoded "
+                    "(camera data and location removed, scaled to at most 2560 px). Returns "
+                    "its media ID, to use as featured_image_id or with insert_image. For an "
+                    "image in this conversation use import_image; for one elsewhere, "
+                    "request_image_upload."
+                ),
+            )
+        )
     registry.add(
         ToolSpec(request_image_upload, title="Get an image upload link", scope=SCOPE_WRITE)
     )

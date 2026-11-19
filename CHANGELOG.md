@@ -6,6 +6,19 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-19
+
+### Added
+- `import_image_from_url` (`wp:write`): an image from its web address into the media
+  library, re-encoded like `import_image`, only from the image hosts the owner lists in
+  `WPMCP_IMAGE_HOSTS` (a name, `.domain` for its subdomains, `img*.domain`; at most 20; no
+  IP addresses or bare endings). Without the setting the tool does not exist. Other hosts
+  are refused before anything is sent, and the image worker checks the address and every
+  redirect again against its own copy of the list, written by `remote-install.sh` to
+  `wpmcp-media@.service.d/hosts.conf`, so the service cannot widen it. The tool's
+  description lists the hosts, and the server instructions point to it. The bridge is
+  unchanged (0.9.0).
+
 ## [0.9.0] - 2026-11-19
 
 SEO fields through SEOPress as well as All in One SEO, and two server fixes found in

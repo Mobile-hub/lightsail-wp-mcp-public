@@ -821,6 +821,7 @@ def test_every_operation_is_an_ability_with_the_tools_annotations(writer):
     python_only = {
         "get_connection_info",
         "import_image",
+        "import_image_from_url",
         "request_image_upload",
         "inspect_page",
         "check_sitemap",

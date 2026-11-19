@@ -3,7 +3,17 @@
 _Updated 2026-11-19._
 
 ## Current focus
-0.9.0 (bridge 0.9.0): the `seo` fields come from All in One SEO or SEOPress (`seo.php`),
+0.10.0 (bridge unchanged, 0.9.0): `import_image_from_url`, asked for by ChatGPT so it could
+put book covers it found on the web into the site's posts (it would not mark covers done
+while they were not in WordPress). Kept within rule 2 by an owner-listed host allowlist
+(`WPMCP_IMAGE_HOSTS`): without it the tool does not exist; the worker holds its own copy
+(`hosts.conf` drop-in) and re-checks every redirect, so neither a manipulated model nor a
+compromised service reaches other hosts. Which hosts the deployment lists is the owner's
+choice (catalogue, publisher and bookseller image servers only; see `docs/operations.md`).
+The deployment lists Open Library's covers (with the archive.org hosts its redirects use);
+ChatGPT is to look covers up by ISBN there.
+
+Before that, 0.9.0 (bridge 0.9.0): the `seo` fields come from All in One SEO or SEOPress (`seo.php`),
 whichever the site runs; writes that set SEO fields are refused when there is none or
 both. The deployment moved from AIOSEO to SEOPress on 2026-11-19 (its data was migrated
 by a one-off script kept outside this repository). Also fixed on the Debian image:

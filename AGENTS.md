@@ -27,10 +27,12 @@ lacks. Read `docs/architecture.md` and `docs/security.md` before changing anythi
    needs a failing-path test. Keep coverage of `auth/` at or above 90%.
 2. **No generic tools.** Each tool is typed, does one thing and is registered in
    `tools/` with its scope and annotations. Never add a tool that takes a REST path, SQL,
-   a shell command, PHP, or an arbitrary URL to fetch. The one exception to registering in
-   `tools/` is site abilities (`tools/abilities.py`): each becomes its own tool, only by
-   exact name from the owner's WordPress-side list, typed by its own schema. There is no
-   tool that runs an ability by name, and there must not be.
+   a shell command, PHP, or an arbitrary URL to fetch. `import_image_from_url` takes an
+   address, but only on the owner's image hosts (`WPMCP_IMAGE_HOSTS`), which the image
+   worker checks against its own copy; never widen that to any host. The one exception
+   to registering in `tools/` is site abilities (`tools/abilities.py`): each becomes its
+   own tool, only by exact name from the owner's WordPress-side list, typed by its own
+   schema. There is no tool that runs an ability by name, and there must not be.
 3. **Never exposed:** users, plugins, themes, options, comments, form entries, permanent
    delete, media delete, file edits, WP-CLI.
 4. **Security controls are not optional.** Do not weaken any of these without an entry in

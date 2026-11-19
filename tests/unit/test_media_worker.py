@@ -209,3 +209,89 @@ def test_serve_works_on_real_pipes():
     thread.join()
     with os.fdopen(out_read, "rb") as result:
         assert json.loads(result.readline())["ok"] is True
+
+
+# --- owner-listed image hosts (import_image_from_url)
+
+COVER_URL = "https://covers.example.org/b/9780000000001-L.jpg"
+
+
+async def public_resolver(_host):
+    return ["20.60.1.1"]
+
+
+def fetch_listed(url: str) -> bytes:
+    return json.dumps({"op": "fetch_listed", "url": url}).encode() + b"\n"
+
+
+def test_worker_fetches_listed_hosts_from_its_own_environment(monkeypatch):
+    transport = httpx.MockTransport(lambda _request: httpx.Response(200, content=png()))
+    monkeypatch.setenv("WPMCP_IMAGE_HOSTS", "covers.example.org")
+    header, _ = ask(fetch_listed(COVER_URL), transport=transport, resolver=public_resolver)
+    assert header["ok"] is True and header["format"] == "PNG"
+    # Each list serves its own op only: ChatGPT's file hosts are not owner hosts, and back.
+    chatgpt = fetch_listed("https://files.oaiusercontent.com/f")
+    header, _ = ask(chatgpt, transport=transport, resolver=public_resolver)
+    assert header["ok"] is False and "not allowed" in header["error"]
+    owner = json.dumps({"op": "fetch", "url": COVER_URL}).encode() + b"\n"
+    header, _ = ask(owner, transport=transport, resolver=public_resolver)
+    assert header["ok"] is False and "not allowed" in header["error"]
+
+
+def test_worker_ignores_hosts_named_in_the_request(monkeypatch):
+    transport = httpx.MockTransport(lambda _request: httpx.Response(200, content=png()))
+    monkeypatch.setenv("WPMCP_IMAGE_HOSTS", "covers.example.org")
+    request = {"op": "fetch_listed", "url": "https://evil.example.net/x.png"}
+    request["hosts"] = ["evil.example.net"]
+    header, _ = ask(json.dumps(request).encode() + b"\n", transport=transport)
+    assert header["ok"] is False and "not allowed" in header["error"]
+
+
+def test_worker_refuses_redirects_off_the_list():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "covers.example.org":
+            return httpx.Response(302, headers={"location": "https://evil.example.net/x.png"})
+        return httpx.Response(200, content=png())
+
+    header, _ = ask(
+        fetch_listed(COVER_URL),
+        transport=httpx.MockTransport(handler),
+        resolver=public_resolver,
+        image_hosts=("covers.example.org",),
+    )
+    assert header["ok"] is False and "evil.example.net" in header["error"]
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [("", "no image hosts are configured"), ("https://bad", "not valid")],
+)
+def test_worker_without_a_valid_host_list_fetches_nothing(monkeypatch, value, message):
+    monkeypatch.setenv("WPMCP_IMAGE_HOSTS", value)
+    header, _ = ask(fetch_listed(COVER_URL))
+    assert header["ok"] is False and message in header["error"]
+
+
+def test_processor_fetch_listed(socket_path):
+    transport = httpx.MockTransport(lambda _request: httpx.Response(200, content=png(7, 7)))
+    listed = make_settings(image_hosts=("covers.example.org",))
+    media = MediaProcessor(listed, transport=transport, resolver=public_resolver)
+    assert asyncio.run(media.fetch_listed(COVER_URL)).width == 7
+    with pytest.raises(ImageError, match="not allowed"):
+        asyncio.run(media.fetch_listed("https://files.oaiusercontent.com/f"))
+    with pytest.raises(ImageError, match="no image hosts"):
+        asyncio.run(MediaProcessor(make_settings()).fetch_listed(COVER_URL))
+
+    # Through the socket the request names the op, and the worker its own list.
+    seen = []
+
+    async def handler(reader, writer):
+        seen.append(json.loads(await reader.readuntil(b"\n")))
+        writer.write(b'{"ok": false, "error": "no image hosts are configured for this site"}\n')
+        await writer.drain()
+        writer.close()
+
+    media = MediaProcessor(make_settings(media_socket=socket_path, image_hosts=listed.image_hosts))
+    with pytest.raises(ImageError, match="no image hosts"):
+        run_with_worker(socket_path, lambda: media.fetch_listed(COVER_URL), handler)
+    assert seen == [{"op": "fetch_listed", "url": COVER_URL}]

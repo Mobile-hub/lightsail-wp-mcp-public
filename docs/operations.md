@@ -112,7 +112,7 @@ access:
 | `/var/lib/wpmcp/wpmcp.sqlite` | Owner, clients, connections (wpmcp 600) |
 | `/run/wpmcp/wpmcp.sock` | The service's only listener (directory 710, owner wpmcp, group of Apache: `daemon` on Bitnami, `www-data` on Debian; from `/etc/tmpfiles.d/wpmcp.conf`) |
 | `/etc/systemd/system/wpmcp.service` | Sandboxed unit: network to loopback only, no access to WordPress files, keys or the database |
-| `/etc/systemd/system/wpmcp-media.socket`, `wpmcp-media@.service` | Image worker: `/run/wpmcp-media.sock` (root:wpmcp 660), one sandboxed process per image, public network only; `wpmcp-media@.service.d/dns.conf` allows the DNS resolver |
+| `/etc/systemd/system/wpmcp-media.socket`, `wpmcp-media@.service` | Image worker: `/run/wpmcp-media.sock` (root:wpmcp 660), one sandboxed process per image, public network only; `wpmcp-media@.service.d/dns.conf` allows the DNS resolver, `hosts.conf` holds the worker's copy of `WPMCP_IMAGE_HOSTS` |
 | Bitnami: `/opt/bitnami/apache/conf/vhosts/mcp-vhost.conf`, `mcp-https-vhost.conf`; Debian: `/etc/apache2/sites-available/wpmcp.conf`, `wpmcp-ssl.conf` | Apache: ACME + redirect on 80, TLS + proxy to the socket on 443 |
 | Bitnami: `/opt/bitnami/letsencrypt/certificates/<MCP_HOST>.*` (lego, `/etc/cron.d/wpmcp-cert`); Debian: `/etc/letsencrypt/live/<MCP_HOST>/` (certbot, its systemd timer) | The service's own certificate and its renewal |
 | Debian, from `bin/setup-server`: `/etc/letsencrypt/live/<WP_HOST>/`, `sites-available/wordpress.conf`, `wordpress-ssl.conf` (in place of the image's `000-default`, `default-ssl`), `conf-available/wordpress-permalinks.conf`, `/etc/php/<v>/apache2/conf.d/99-wpmcp.ini`, `/etc/apt/apt.conf.d/20auto-upgrades` | The site's certificate, vhosts, permalink rules, PHP hardening, security updates |
@@ -178,6 +178,28 @@ menus, bulk changes; 0 turns them off; a bulk call counts one per item, a dry ru
 one that would go over is refused whole), `WPMCP_MEDIA_MAX_BYTES` (10 MB per image; Apache allows 11 MB on
 `/upload/`), `WPMCP_UPLOAD_TTL` (900 s). Override them in the site file
 (`WPMCP_WRITE_BUDGET=60`) and deploy.
+
+## Images from the web
+
+`import_image_from_url` brings an image into the media library from its address (book
+covers, typically), and exists only when the site file lists the hosts it may use:
+
+```bash
+WPMCP_IMAGE_HOSTS=covers.example.org,.images.example.net   # in the site file, then bin/deploy
+```
+
+A name is that host only; `.example.net` is any subdomain of it (not `example.net`
+itself); `img*.example.net` lets `*` stand for part of one label. At most 20, no IP
+addresses, no whole endings such as `.org`. Every redirect must land on a listed host too,
+so list the host an image server redirects to as well. Open Library's covers by ISBN
+(`https://covers.openlibrary.org/b/isbn/<ISBN>-L.jpg`) often go through `archive.org` to
+one of its servers: `WPMCP_IMAGE_HOSTS=covers.openlibrary.org,archive.org,ia*.us.archive.org`. Choose image servers of
+catalogues, publishers and booksellers, whose request logs nobody else reads: never a host
+where anyone can put files or see who fetched them (file sharing, generic cloud storage
+such as `.s3.amazonaws.com`, URL shorteners), which would let a manipulated model send data
+out in an address. The deploy prints `image hosts: ...` and writes the worker's own copy
+to `wpmcp-media@.service.d/hosts.conf`; the service's copy is in `/etc/wpmcp/wpmcp.env`.
+After a change, refresh the tools in the client: the tool's description lists the hosts.
 
 ## Live changes
 

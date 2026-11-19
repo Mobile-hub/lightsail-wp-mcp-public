@@ -39,6 +39,8 @@ static client ID and secret. Token endpoint authentication: `client_secret_post`
 
 - **ChatGPT** passes an image from the conversation (uploaded or generated) straight to
   `import_image` (`openai/fileParams`).
+- **Either client** can bring an image from the web with `import_image_from_url`, when the
+  owner has listed its host (`WPMCP_IMAGE_HOSTS`, see `docs/operations.md`).
 - **Claude** cannot pass files to tools: it calls `request_image_upload` and gives you a
   single-use link (15 minutes) where you upload the image from a browser or phone. Then
   tell Claude it is uploaded.

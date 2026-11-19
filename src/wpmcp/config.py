@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -70,6 +71,33 @@ def load_wp_password(env: dict[str, str]) -> str:
     return _load_credential(env, "WPMCP_WP_PASSWORD", WP_PASSWORD_CREDENTIAL)
 
 
+# A host pattern: a name, ".name" for any subdomain of it, or "*" standing for part of ONE
+# label (``img*.example.org``). No scheme, port, path or IP address.
+_HOST_PATTERN = re.compile(
+    r"^\.?(?:[a-z0-9*](?:[a-z0-9*-]*[a-z0-9*])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{2,59})$"
+)
+MAX_IMAGE_HOSTS = 20
+
+
+def parse_image_hosts(value: str | None) -> tuple[str, ...]:
+    """WPMCP_IMAGE_HOSTS: where import_image_from_url may download from (empty: nowhere).
+
+    Each pattern must name a site, not a whole domain ending: its last two labels are fixed
+    (``.example.org`` and ``img*.example.org`` are accepted, ``.org`` and ``*.org`` are not).
+    """
+    hosts = tuple(h.lower().rstrip(".") for h in _list(value))
+    if len(hosts) > MAX_IMAGE_HOSTS:
+        raise ValueError(f"WPMCP_IMAGE_HOSTS: at most {MAX_IMAGE_HOSTS} hosts")
+    for host in hosts:
+        labels = host.lstrip(".").split(".")
+        if not _HOST_PATTERN.fullmatch(host) or len(labels) < 2 or "*" in "".join(labels[-2:]):
+            raise ValueError(
+                f"WPMCP_IMAGE_HOSTS: {host!r} is not a host name such as images.example.org, "
+                ".example.org (any subdomain) or img*.example.org"
+            )
+    return tuple(dict.fromkeys(hosts))
+
+
 def _is_loopback_host(host: str) -> bool:
     if host == "localhost":
         return True
@@ -122,6 +150,10 @@ class Settings:
     # process (development only; production has no internet access and keeps no decoder).
     media_socket: str = ""
     media_max_bytes: int = 10 * 1024 * 1024
+    # Hosts import_image_from_url may download images from (book covers from a publisher's
+    # or a catalogue's image server). Empty: the tool does not exist. The worker reads its
+    # own copy (deploy/remote-install.sh), so the service cannot widen it.
+    image_hosts: tuple[str, ...] = ()
     # Single-use upload links (request_image_upload), seconds.
     upload_ttl: int = 900
     # Write tool calls allowed per connection and hour (a runaway loop stops here).
@@ -160,6 +192,8 @@ class Settings:
             )
         if self.live_budget < 0:
             raise ValueError("WPMCP_LIVE_BUDGET cannot be negative (0 turns live changes off)")
+        if parse_image_hosts(",".join(self.image_hosts)) != self.image_hosts:
+            raise ValueError("image_hosts must be lower-case host patterns without duplicates")
 
     def _check_wp(self) -> None:
         parts = urlsplit(self.wp_url)
@@ -220,6 +254,7 @@ class Settings:
             wp_timeout=float(env.get("WPMCP_WP_TIMEOUT") or cls.wp_timeout),
             media_socket=env.get("WPMCP_MEDIA_SOCKET", "").strip(),
             media_max_bytes=_int(env.get("WPMCP_MEDIA_MAX_BYTES"), cls.media_max_bytes),
+            image_hosts=parse_image_hosts(env.get("WPMCP_IMAGE_HOSTS")),
             upload_ttl=_int(env.get("WPMCP_UPLOAD_TTL"), cls.upload_ttl),
             write_budget=_int(env.get("WPMCP_WRITE_BUDGET"), cls.write_budget),
             live_budget=_int(env.get("WPMCP_LIVE_BUDGET"), cls.live_budget),

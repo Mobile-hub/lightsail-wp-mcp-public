@@ -1,6 +1,6 @@
 [project]
 name = "wpmcp"
-version = "0.9.0"
+version = "0.10.0"
 description = "Remote MCP server with its own OAuth 2.1 authorization server, to operate a self-hosted WordPress site from ChatGPT and Claude."
 readme = "README.md"
 license = "MIT"

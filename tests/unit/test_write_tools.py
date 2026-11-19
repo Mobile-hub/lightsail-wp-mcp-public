@@ -303,3 +303,95 @@ def test_request_image_upload_returns_a_single_use_link(wp_app, wp_client, clock
     stored = store.get_upload_link(secret, now=clock())
     assert stored.grant_id == grant.grant_id
     assert stored.params == {"title": "Capa", "attach_to": 8}
+
+
+# --- import_image_from_url: only from the owner's image hosts
+
+COVER_URL = "https://covers.example.org/b/El%20Principito-L.jpg"
+
+
+def instructions_of(client, token) -> str:
+    hello = {"protocolVersion": "2025-06-18", "capabilities": {}}
+    hello["clientInfo"] = {"name": "test", "version": "1"}
+    return rpc_result(rpc(client, token, "initialize", hello))["instructions"]
+
+
+@pytest.fixture
+def listed(store, clock, fake):
+    app = build(store, clock, fake, image_hosts=("covers.example.org", ".cdn.example.net"))
+    with TestClient(app, base_url=BASE) as client:
+        token, _ = access_token(app, clock)
+        yield client, token
+
+
+def test_import_image_from_url_exists_only_with_image_hosts(wp_app, wp_client, clock, listed):
+    token, _ = access_token(wp_app, clock)
+    names = {t["name"] for t in rpc_result(rpc(wp_client, token, "tools/list"))["tools"]}
+    assert "import_image_from_url" not in names and "import_image" in names
+    assert "import_image_from_url" not in instructions_of(wp_client, token)
+
+    client, token = listed
+    assert "import_image_from_url" in instructions_of(client, token)
+    tools = {t["name"]: t for t in rpc_result(rpc(client, token, "tools/list"))["tools"]}
+    tool = tools["import_image_from_url"]
+    assert "covers.example.org, any subdomain of cdn.example.net" in tool["description"]
+    assert tool["annotations"]["openWorldHint"] is True
+    assert tool["annotations"]["destructiveHint"] is False
+    assert tool["securitySchemes"] == [{"type": "oauth2", "scopes": ["wp:write"]}]
+    assert set(tool["inputSchema"]["properties"]) == {
+        "url", "title", "alt_text", "caption", "attach_to"
+    }  # fmt: skip
+
+
+def test_import_image_from_url_downloads_and_uploads(listed, fake):
+    client, token = listed
+    result = call(client, token, "import_image_from_url", {"url": COVER_URL, "attach_to": 8})
+    assert payload(result)["id"] == 501
+    upload = fake.requests[-1]
+    assert upload.url.path.endswith("/media")
+    # Without a title the file is named after the address's file name.
+    assert b'filename="el-principito-l.png"' in upload.content
+    assert b'name="attach_to"' in upload.content
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://evil.example.net/cover.png",
+        "https://covers.example.org.evil.example.net/cover.png",
+        "https://cdn.example.net/cover.png",  # ".cdn.example.net" is its subdomains only
+        "https://169.254.169.254/latest/meta-data",
+        "https://[::1/cover.png",
+    ],
+)
+def test_import_image_from_url_refuses_other_hosts(listed, fake, url):
+    client, token = listed
+    result = call(client, token, "import_image_from_url", {"url": url})
+    text = result["content"][0]["text"]
+    assert result["isError"] is True and "Refused:" in text and "covers.example.org" in text
+    assert fake.requests == []
+
+
+@pytest.mark.parametrize("url", ["http://covers.example.org/c.png", "file:///etc/passwd"])
+def test_import_image_from_url_is_https_only(listed, fake, url):
+    client, token = listed
+    result = call(client, token, "import_image_from_url", {"url": url})
+    assert result["isError"] is True
+    assert fake.requests == []
+
+
+def test_import_image_from_url_reports_download_errors(store, clock, fake):
+    def redirect(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(302, headers={"location": "https://evil.example.net/x.png"})
+
+    settings = make_settings(
+        wp_url="https://books.example.test", wp_password="pw", image_hosts=("covers.example.org",)
+    )
+    wp = WordPressClient(settings, transport=httpx.MockTransport(fake))
+    media = MediaProcessor(settings, transport=httpx.MockTransport(redirect), resolver=public)
+    app = create_app(settings, store=store, clock=clock, wp=wp, media=media)
+    with TestClient(app, base_url=BASE) as client:
+        token, _ = access_token(app, clock)
+        result = call(client, token, "import_image_from_url", {"url": COVER_URL})
+    assert result["isError"] is True and "evil.example.net" in result["content"][0]["text"]
+    assert fake.requests == []

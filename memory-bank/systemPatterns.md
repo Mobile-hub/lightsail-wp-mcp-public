@@ -17,7 +17,9 @@ Stable decisions and their reasons live in `docs/architecture.md` and
   detection and a persistent lockout need it. One SQLite file, one process.
 - **Untrusted bytes never reach the service process.** Images are decoded, downloaded and
   re-encoded in the image worker (`media/worker.py`, one systemd-activated process per
-  request); the service only forwards bytes and uploads the result.
+  request); the service only forwards bytes and uploads the result. Each download op has
+  a host list the worker holds itself (ChatGPT's file hosts; the owner's
+  `WPMCP_IMAGE_HOSTS` from its own environment): requests name a URL, never hosts.
 - **Drafts-only writes are enforced in the bridge**, not only in tool code: the bridge
   forces `post_status=draft` on create and refuses edits of anything but draft/pending.
 - **Edits name the version they were based on** (`version` from `get_content`).

@@ -47,8 +47,10 @@ leaves out).
 Draft tools (`wp:write`), none of which changes what visitors see: `create_draft` (in one
 language, optionally linked as a translation, with categories, featured image and SEO),
 `update_draft` (drafts and pending items only, against the `version` read),
-`create_category`, `import_image` (ChatGPT files), `request_image_upload` (single-use
-upload link, any client), `update_media` (title, alt text, caption).
+`create_category`, `import_image` (ChatGPT files), `import_image_from_url` (only from the
+image hosts the owner lists in `WPMCP_IMAGE_HOSTS`, such as a catalogue's book covers;
+absent otherwise), `request_image_upload` (single-use upload link, any client),
+`update_media` (title, alt text, caption).
 
 Live tools (`wp:write`), which change what visitors see, each against the `version` read
 and undoable: `publish_content`, `schedule_content`, `unpublish_content`,
