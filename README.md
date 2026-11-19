@@ -82,8 +82,9 @@ deletes, files, WP-CLI, SQL or arbitrary URLs.
   Another layout is a new pair of those files.
 - **WordPress:** 6.9 or later for the abilities (on older versions the bridge falls back
   to plain routes; not tested);
-  tested on 7.1 with **Polylang** 3.9 (free, required) and **All in One
-  SEO** 5.0 (SEO fields are absent without it).
+  tested on 7.1 with **Polylang** 3.9 (free, required) and, for the SEO fields, one of
+  **All in One SEO** 5.0 or **SEOPress** 10.4 (free); without either, SEO fields are
+  absent and writes that set them are refused.
 - **A host name for the service** (for example `mcp.example.org`) pointing at the server.
 - **Locally:** [uv](https://docs.astral.sh/uv/), and podman or docker for the WordPress
   test stack.
@@ -96,7 +97,7 @@ bin/wpmcp owner set                      # consent password + TOTP secret for yo
 bin/wpmcp client add --preset claude     # prints client_id and client_secret once
 make serve                               # http://127.0.0.1:8080 (loopback only)
 make test                                # ruff, pytest with coverage, shellcheck
-bin/dev up                               # local WordPress + Polylang + All in One SEO on 127.0.0.1:8081
+bin/dev up                               # local WordPress + Polylang + All in One SEO (SEOPress inactive) on 127.0.0.1:8081
 ```
 
 With the stack up, `make test` also runs the integration tests against it. `bin/wpmcp

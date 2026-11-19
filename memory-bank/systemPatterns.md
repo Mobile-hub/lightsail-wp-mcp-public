@@ -46,3 +46,6 @@ Stable decisions and their reasons live in `docs/architecture.md` and
 - **Public pages only by content ID.** Tools that look at what visitors get take IDs; the
   address comes from the bridge (`/links`) and `wp/public.py` refuses anything off the
   site's origin. Answer summaries, not HTML or XML.
+- **SEO goes through `seo.php`.** Never call an SEO plugin from other bridge files: read
+  with `wpmcp_seo()`, write with `wpmcp_save_seo()`, and refuse a write that sets SEO
+  fields up front with `wpmcp_seo_check()`, so nothing is half saved.

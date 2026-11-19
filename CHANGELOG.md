@@ -6,6 +6,38 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-19
+
+SEO fields through SEOPress as well as All in One SEO, and two server fixes found in
+production.
+
+### Added
+- Bridge 0.9.0 (`seo.php`): the `seo` fields of every tool come from the SEO plugin the
+  site runs, All in One SEO (its table) or SEOPress (post meta: title, description, the
+  first target keyword as the focus keyphrase with the others kept, Facebook title and
+  description, canonical, noindex and nofollow), with `seo.plugin` naming it. The site
+  overview has `seo_plugin` and SEOPress's version. `check_sitemap` also looks for
+  SEOPress's `/sitemaps.xml` when robots.txt names none.
+
+### Changed
+- A write that sets SEO fields while no SEO plugin is active, or both are, is refused
+  whole (`wpmcp_no_seo`, `wpmcp_seo_conflict`); before, the rest was saved and the SEO
+  fields dropped with only a note. Item versions change once on upgrade (`seo.plugin` is
+  part of what they fingerprint).
+- Local stack: SEOPress is installed inactive; integration tests switch to it, and to no
+  SEO plugin, and back.
+- `bin/setup-server` on Lightsail's own image (Debian) installs the PHP modules
+  WordPress's Site Health lists as optional: `intl` and `imagick` (Debian's ImageMagick
+  policy refuses PostScript, PDF and XPS input).
+
+### Fixed
+- Lightsail's own image (Debian): `.htaccess` is now really off for the site
+  (`AllowOverride None` next to the permalink rules). The image allows it under
+  `/var/www`, so a plugin's `.htaccess` with rewrite rules of its own (LiteSpeed Cache's)
+  replaced the permalink rules: every permalink, the sitemap and the REST API (the block
+  editor, Site Health, All in One SEO, the wpmcp bridge) answered 404. It also let PHP
+  change the web server's configuration, which `docs/security.md` said it could not.
+
 ## [0.8.0] - 2026-11-19
 
 Bulk changes that do not move bodies, checks of what search engines see, and the menus of

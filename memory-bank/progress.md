@@ -50,6 +50,11 @@
   `inspect_page`, `check_sitemap`, menus of widgets and `add_menu_items`; the local stack
   gains a widget area (dev-only mu-plugin) and footer menus. 480 tests, 99% coverage.
 
+- 2026-11-19 — 0.9.0 (bridge 0.9.0): SEO through SEOPress or All in One SEO, refused
+  without exactly one; `.htaccess` off and `intl`/`imagick` on the Debian image. Found in
+  production: a cache plugin's `.htaccess` took every permalink and `/wp-json` down, and
+  AIOSEO's setup wizard installs its vendor's other plugins.
+
 ## Not done
 - Connecting Claude.
 - Trying the live tools against the real products (ChatGPT, Claude).

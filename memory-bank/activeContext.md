@@ -3,7 +3,13 @@
 _Updated 2026-11-19._
 
 ## Current focus
-0.8.0 (bridge 0.8.0), not yet deployed: bulk "ensure" changes without bodies
+0.9.0 (bridge 0.9.0): the `seo` fields come from All in One SEO or SEOPress (`seo.php`),
+whichever the site runs; writes that set SEO fields are refused when there is none or
+both. The deployment moved from AIOSEO to SEOPress on 2026-11-19 (its data was migrated
+by a one-off script kept outside this repository). Also fixed on the Debian image:
+`.htaccess` really off, `intl` and `imagick` installed by `bin/setup-server`.
+
+Before that, 0.8.0 (bridge 0.8.0, deployed 2026-11-19): bulk "ensure" changes without bodies
 (`bulk_add_links`, `bulk_update_seo`, `undo_bulk_change`; `rest-bulk.php`,
 `tools/bulk.py`), budgets that count each item (`ToolSpec.cost`, `SlidingWindow.allow(count=)`),
 `search_content` with versions, `inspect_page` and `check_sitemap` reading the public site by
@@ -52,6 +58,13 @@ pages; the Bitnami path was tested on a throwaway instance and 0.5.0 deployed on
 `docs/zero-to-ninja.md` (2026-11-17) is the human walkthrough; it only orders what the
 reference docs say, so keep it in step with `infra/README.md`, `operations.md` and
 `clients.md` when they change.
+
+Lessons from real servers (2026-11-19): Lightsail's own image has `AllowOverride All`
+under `/var/www`; it only looked like ".htaccess is not read" because there was none, until
+a cache plugin wrote one and every permalink and `/wp-json` answered 404 (fixed in
+setup.debian.sh). The same image runs Apache prefork with `MaxRequestWorkers 5`: an
+owner's wp-admin session plus a SEO crawler saturate it, and each MCP call needs two
+workers (the proxy and the bridge request).
 
 Lessons from real servers: fresh Bitnami images ship an unpatched PHP (8.4.20 in
 November 2026), no python3-venv, and no lego/ACME webroot until bncert-tool runs; a rewrite
