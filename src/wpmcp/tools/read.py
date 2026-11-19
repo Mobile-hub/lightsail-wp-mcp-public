@@ -29,6 +29,9 @@ Status = Literal["any", "publish", "future", "draft", "pending", "private", "tra
 # after it) is lost. A part this size, escaped, stays well inside it.
 DEFAULT_PART = 8_000
 MAX_PART = 60_000
+# ChatGPT shows a JSON result with a top-level "content" key as {} to the model, so the
+# bridge's `content` is answered as `body`.
+BODY = "body"
 # Answered before everything else, so they survive a client that drops the tail.
 HEAD = ("id", "version", "status", "being_edited", "content_length")
 PART = ("content_offset", "content_complete", "next_offset")
@@ -105,12 +108,13 @@ def register(registry: Registry, wp: WordPressClient) -> None:
             Field(ge=1000, le=MAX_PART, description="Most characters of the body to return."),
         ] = DEFAULT_PART,
     ) -> dict:
-        """Full post or page: raw content (block markup or classic HTML), excerpt, status,
-        language and translations, categories and tags, featured image, SEO fields, any
-        site-specific read-only fields (`extra`) and whether someone has it open in the
-        editor. `version` identifies what you read: pass it to update_draft. A long body
-        comes in parts: while content_complete is false, call again with offset=next_offset
-        and join the parts before rewriting the body (to add an image, use insert_image)."""
+        """Full post or page: `body` (the raw content, block markup or classic HTML: what the
+        `content` argument of update_draft replaces), excerpt, status, language and
+        translations, categories and tags, featured image, SEO fields, any site-specific
+        read-only fields (`extra`) and whether someone has it open in the editor. `version`
+        identifies what you read: pass it to update_draft. A long body comes in parts: while
+        content_complete is false, call again with offset=next_offset and join the parts
+        before rewriting the body (to add an image, use insert_image)."""
         return part_of(await call(f"/content/{content_id}"), offset, max_chars)
 
     async def list_terms(
@@ -197,5 +201,5 @@ def part_of(item: Any, offset: int, max_chars: int) -> Any:
     ordered.update(
         (key, value) for key, value in fields.items() if key not in ordered and key != "content"
     )
-    ordered["content"] = body[offset:end]
+    ordered[BODY] = body[offset:end]
     return ordered

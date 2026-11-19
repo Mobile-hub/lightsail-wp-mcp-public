@@ -28,3 +28,6 @@ Stable decisions and their reasons live in `docs/architecture.md` and
   Keep `version`/`content_length` at the top of every content answer, keep parts under
   `DEFAULT_PART`, and prefer tools that change a body without sending it (`insert_image`)
   over "read all, rewrite all". The shrink check backs this up.
+- **No field named `content` in a tool result.** ChatGPT shows such a result as `{}` to
+  the model (reported by others, confirmed here on 2026-11-19 with `get_content`). The body
+  is `body`; the overview's counts are `counts`. Input arguments named `content` are fine.

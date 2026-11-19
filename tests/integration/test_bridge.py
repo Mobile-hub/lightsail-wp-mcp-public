@@ -126,6 +126,7 @@ def tool(mcp, name, /, **arguments):
 
 def test_overview_tool(mcp):
     overview = tool(mcp, "get_site_overview")
+    assert "content" not in overview and overview["counts"]["post"]["by_status"]
     assert [lang["slug"] for lang in overview["languages"] if lang["default"]] == ["en"]
     assert overview["versions"]["bridge"]
 
@@ -149,7 +150,7 @@ def test_untranslated_filter(mcp):
 def test_get_content_returns_the_body_and_seo(mcp):
     item = tool(mcp, "search_content", lang="en", query="Paddington")["items"][0]
     content = tool(mcp, "get_content", content_id=item["id"])
-    assert "🐻" in content["content"]
+    assert "🐻" in content["body"] and "content" not in content
     assert content["content_format"] == "blocks"
     assert content["categories"][0]["name"] == "Adventure"
     assert set(content["seo"]) >= {"title", "description", "focus_keyphrase", "noindex"}
@@ -265,7 +266,7 @@ def test_translation_draft_is_linked_but_hidden_from_visitors(writer, created):
 
     # The block markup survives the save exactly, emoji included.
     stored = tool(writer, "get_content", content_id=draft["id"])
-    assert stored["content"] == BLOCKS
+    assert stored["body"] == BLOCKS
     assert stored["title"] == "Um Urso Chamado Paddington 🐻"
 
     # Visitors see neither the draft nor a link to it.
@@ -334,7 +335,7 @@ def test_published_items_and_scripts(writer, created):
     )
     created["post"].append(draft["id"])
     assert any("WordPress changed the content" in note for note in draft["notes"])
-    stored = tool(writer, "get_content", content_id=draft["id"])["content"]
+    stored = tool(writer, "get_content", content_id=draft["id"])["body"]
     assert "<script" not in stored and "<iframe" not in stored
 
 
@@ -456,7 +457,7 @@ def test_live_edit_keeps_a_revision_and_restores_it(writer, created):
     )
     assert edited["seo"]["title"] == "Edited SEO"
     assert edited["before"]["revision_id"] and edited["before"]["seo"]["title"] is None
-    assert tool(writer, "get_content", content_id=draft["id"])["content"] == "<p>Two</p>"
+    assert tool(writer, "get_content", content_id=draft["id"])["body"] == "<p>Two</p>"
 
     restored = tool(
         writer,
@@ -465,7 +466,7 @@ def test_live_edit_keeps_a_revision_and_restores_it(writer, created):
         expected_version=edited["version"],
         revision_id=edited["before"]["revision_id"],
     )
-    assert tool(writer, "get_content", content_id=draft["id"])["content"] == "<p>One</p>"
+    assert tool(writer, "get_content", content_id=draft["id"])["body"] == "<p>One</p>"
     other = attempt(
         writer,
         "restore_revision",
@@ -625,12 +626,12 @@ def test_get_content_answers_the_version_first_and_long_bodies_in_parts(writer, 
                                           "arguments": {"content_id": draft["id"]}})
     )  # fmt: skip
     text = result["content"][0]["text"]
-    assert text.index('"version"') < text.index('"seo"') < text.index('"content"')
+    assert text.index('"version"') < text.index('"seo"') < text.index('"body"')
     parts, offset = [], 0
     while offset is not None:
         part = tool(writer, "get_content", content_id=draft["id"], offset=offset)
         assert part["version"] == draft["version"]
-        parts.append(part["content"])
+        parts.append(part["body"])
         offset = part["next_offset"]
     assert len(parts) > 1 and "".join(parts) == body
 
@@ -702,7 +703,7 @@ def test_insert_image_into_a_draft_keeps_the_rest_of_the_body(writer, created, i
         alt_text="Placa con el chip", caption="The <em>new</em> chip<script>x</script>",
     )  # fmt: skip
     assert "before" not in after and "content" not in after
-    body = tool(writer, "get_content", content_id=draft["id"])["content"]
+    body = tool(writer, "get_content", content_id=draft["id"])["body"]
     head, image, tail = body.partition(f'<!-- wp:image {{"id":{image_id},"sizeSlug":"large"')
     assert image, body
     # Everything around the image is the original, byte for byte.
@@ -719,7 +720,7 @@ def test_insert_image_into_a_draft_keeps_the_rest_of_the_body(writer, created, i
                  media_id=image_id, position="start")  # fmt: skip
     end = tool(writer, "insert_image", content_id=draft["id"], expected_version=start["version"],
                media_id=image_id, size="medium")  # fmt: skip
-    body = tool(writer, "get_content", content_id=draft["id"])["content"]
+    body = tool(writer, "get_content", content_id=draft["id"])["body"]
     assert body.startswith("<!-- wp:image") and body.rstrip().endswith("<!-- /wp:image -->")
     assert body.count('alt="A chip on a board"') == 2 and "size-medium" in body
     assert body.count("<!-- wp:image") == 3
@@ -753,7 +754,7 @@ def test_insert_image_into_classic_content_and_without_alt(writer, created):
     done = tool(writer, "insert_image", content_id=page["id"], expected_version=page["version"],
                 media_id=bare)  # fmt: skip
     assert any("no alt text" in note for note in done["notes"])
-    body = tool(writer, "get_content", content_id=page["id"])["content"]
+    body = tool(writer, "get_content", content_id=page["id"])["body"]
     assert body.startswith("<p>Hola</p>\n<p>Adiós</p>\n\n<!-- wp:image")
 
 
@@ -781,7 +782,7 @@ def test_insert_image_into_a_published_item_is_a_live_edit(writer, created, imag
 
     tool(writer, "restore_revision", content_id=draft["id"], expected_version=inserted["version"],
          revision_id=inserted["before"]["revision_id"])  # fmt: skip
-    assert tool(writer, "get_content", content_id=draft["id"])["content"] == ARTICLE
+    assert tool(writer, "get_content", content_id=draft["id"])["body"] == ARTICLE
 
     dev_wp("option", "update", "page_on_front", str(draft["id"]))
     try:

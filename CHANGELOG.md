@@ -6,6 +6,16 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-19
+
+### Fixed
+- ChatGPT showed `get_content` as `{}`: it hides a JSON tool result that has a field named
+  `content`. The body is now answered as `body`, and `get_site_overview`'s post counts as
+  `counts` (bridge 0.6.1). No tool result has a `content` field any more.
+  This, rather than the size of the body, is the likely cause of the failure 0.6.0 set
+  out to fix: write results, which have no `content` field, always reached the model. The
+  0.6.0 changes (parts, version first, `insert_image`, shrink check) stay as safeguards.
+
 ## [0.6.0] - 2026-11-19
 
 Long posts and pages could not be edited from ChatGPT: it cuts long tool results at a line

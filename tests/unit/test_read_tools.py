@@ -149,14 +149,16 @@ def test_get_content_puts_the_version_first_and_the_body_last(wp_app, wp_client,
     token, _ = access_token(wp_app, clock, scope="wp:read")
     result = call(wp_client, token, "get_content", {"content_id": 9})
     data = payload(result)
-    assert list(data)[:2] == ["id", "version"] and list(data)[-1] == "content"
-    assert data["content"] == "<p>short 🐻</p>"
+    assert list(data)[:2] == ["id", "version"] and list(data)[-1] == "body"
+    # ChatGPT shows a result with a top-level "content" key as {}.
+    assert "content" not in data
+    assert data["body"] == "<p>short 🐻</p>"
     assert data["content_complete"] is True and data["next_offset"] is None
     assert data["content_length"] == len("<p>short 🐻</p>")
     assert "notes" not in data
     # A client that keeps only the first lines of the answer still has the version.
     text = raw_text(result)
-    assert text.index('"version"') < text.index('"content"')
+    assert text.index('"version"') < text.index('"body"')
 
 
 def test_get_content_returns_a_long_body_in_parts(wp_app, wp_client, clock, fake):
@@ -168,9 +170,9 @@ def test_get_content_returns_a_long_body_in_parts(wp_app, wp_client, clock, fake
     while True:
         data = payload(call(wp_client, token, "get_content", {"content_id": 9, "offset": offset}))
         assert data["content_offset"] == offset and data["content_length"] == len(body)
-        assert len(data["content"]) <= 8_000
+        assert len(data["body"]) <= 8_000
         assert data["version"] == "0123456789abcdef"
-        parts.append(data["content"])
+        parts.append(data["body"])
         if data["content_complete"]:
             assert data["next_offset"] is None
             break
@@ -179,7 +181,7 @@ def test_get_content_returns_a_long_body_in_parts(wp_app, wp_client, clock, fake
     assert len(parts) > 3 and "".join(parts) == body
 
     small = payload(call(wp_client, token, "get_content", {"content_id": 9, "max_chars": 1000}))
-    assert small["next_offset"] == 1000 and small["content"] == body[:1000]
+    assert small["next_offset"] == 1000 and small["body"] == body[:1000]
 
 
 @pytest.mark.parametrize(

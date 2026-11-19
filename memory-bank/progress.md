@@ -35,6 +35,11 @@
 - 2026-11-19 — 0.6.0 (bridge 0.6.0): `insert_image`, `get_content` in parts with the
   version first, the shrink check (`allow_shrink`). Unit tests and 39 integration tests
   against the local stack.
+- 2026-11-19 — 0.6.1: after "refresh tools" ChatGPT saw `insert_image`, but `get_content`
+  still reached the model as `{}` even for 1,000 characters: ChatGPT hides results with a
+  `content` field. Renamed to `body` (and the overview's `counts`).
+  This also explains the day before (write results have no `content` field), so the size
+  was probably not the cause; the 0.6.0 safeguards stay.
 
 ## Not done
 - Connecting Claude.

@@ -7,7 +7,8 @@ _Updated 2026-11-19._
 tool results at a line boundary and so lost the body and the `version` after it:
 `get_content` answers the version first and a long body in parts, a much shorter body is
 refused without `allow_shrink`, and `insert_image` places an image without sending the
-body. Next: try `insert_image` and a long page edit from ChatGPT against production; if
+body; 0.6.1 renames the body field to `body`, since ChatGPT shows any result with a
+`content` field as `{}`. Next: try `insert_image` and a long page edit from ChatGPT against production; if
 parts still get cut, lower `DEFAULT_PART` in `tools/read.py`.
 
 Release 0.5.0 (bridge 0.5.0) completes the editing features: live tools (publish,

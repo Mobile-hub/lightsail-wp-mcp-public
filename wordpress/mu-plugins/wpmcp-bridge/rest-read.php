@@ -182,7 +182,8 @@ function wpmcp_rest_overview(): array {
 		'timezone'             => wp_timezone_string(),
 		'server_time_gmt'      => gmdate( 'Y-m-d\TH:i:s\Z' ),
 		'languages'            => $languages,
-		'content'              => $counts,
+		// Not "content": ChatGPT shows a JSON result with a "content" key as {} to the model.
+		'counts'               => $counts,
 		'categories'           => (int) wp_count_terms( array( 'taxonomy' => 'category', 'hide_empty' => false ) ),
 		'tags'                 => (int) wp_count_terms( array( 'taxonomy' => 'post_tag', 'hide_empty' => false ) ),
 		'front_page'           => 'page' === get_option( 'show_on_front' ) ? (int) get_option( 'page_on_front' ) : 'latest posts',
