@@ -148,3 +148,9 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md). Report vulnerabilities privately as de
 [MIT](LICENSE). Parts come from
 [editorial.workflow](https://github.com/Machine-Learning-Labs/chatgpt-local-mcp-editorial.workflow),
 also MIT; see [`PROVENANCE.md`](PROVENANCE.md).
+
+## Similar projects
+
+Other projects meet the same need in more general environments, most as a WordPress plugin
+that works on any host. [`docs/alternatives.md`](docs/alternatives.md) describes them,
+along with the trade-offs between the two approaches.
