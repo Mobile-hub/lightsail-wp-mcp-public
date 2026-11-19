@@ -7,7 +7,8 @@
 #   bin/dev down        stop it (data kept)
 #   bin/dev reset       stop it and delete its data
 #
-# Plugin versions are the ones tested; override with WP_DEV_CORE / WP_DEV_POLYLANG / WP_DEV_AIOSEO.
+# Plugin versions are the ones tested; override with WP_DEV_CORE / WP_DEV_POLYLANG / WP_DEV_AIOSEO /
+# WP_DEV_SEOPRESS.
 source "$(dirname "$0")/lib.sh"
 
 port="${WP_DEV_PORT:-$(env_get WP_DEV_PORT 8081)}"
@@ -57,6 +58,12 @@ provision() {
   # shellcheck disable=SC2046
   wp plugin install all-in-one-seo-pack --activate \
     $(version_arg "${WP_DEV_AIOSEO:-$(env_get WP_DEV_AIOSEO)}")
+  # SEOPress, installed but inactive: the integration tests switch to it for its adapter
+  # (wordpress/mu-plugins/wpmcp-bridge/seo.php) and back.
+  # shellcheck disable=SC2046
+  wp plugin install wp-seopress $(version_arg "${WP_DEV_SEOPRESS:-$(env_get WP_DEV_SEOPRESS)}") \
+    || warn "SEOPress install skipped"
+  wp plugin deactivate wp-seopress --quiet 2>/dev/null || true
   wp rewrite structure '/%postname%/' --hard
   wp eval-file /dev-scripts/charset.php
   wp eval-file /dev-scripts/provision.php

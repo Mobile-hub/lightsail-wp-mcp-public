@@ -154,6 +154,7 @@ def test_get_content_returns_the_body_and_seo(mcp):
     assert content["content_format"] == "blocks"
     assert content["categories"][0]["name"] == "Adventure"
     assert set(content["seo"]) >= {"title", "description", "focus_keyphrase", "noindex"}
+    assert content["seo"]["plugin"] == "aioseo"
     assert content["being_edited"] is False
     assert content["extra"] is None  # no wpmcp_bridge_extra_fields filter on the dev stack
 
@@ -1113,3 +1114,84 @@ def test_inspect_page_and_check_sitemap_read_the_public_site(writer):
     found = tool(writer, "check_sitemap", content_ids=ids)
     assert found["sitemaps"] and found["checked"] == len(ids)
     assert found["listed"] == len(ids) and found["missing"] == []
+
+
+# --- SEO through SEOPress, or without an SEO plugin (0.9.0). bin/dev provision installs
+# SEOPress inactive; these tests switch plugins and put All in One SEO back.
+
+
+def switch_seo(*active: str) -> None:
+    for plugin in ("all-in-one-seo-pack", "wp-seopress"):
+        dev_wp("plugin", "activate" if plugin in active else "deactivate", plugin)
+
+
+@pytest.fixture
+def seo_plugins():
+    yield switch_seo
+    switch_seo("all-in-one-seo-pack")
+
+
+def meta(item_id: int, key: str) -> str:
+    return dev_eval(f"echo get_post_meta( {item_id}, '{key}', true );")
+
+
+def test_seo_fields_go_to_seopress(writer, created, seo_plugins):
+    seo_plugins("wp-seopress")
+    overview = tool(writer, "get_site_overview")
+    assert overview["seo_plugin"] == "seopress" and overview["versions"]["seopress"]
+    seo = {"title": "Books & more", "description": "Line one", "focus_keyphrase": "first"}
+    item = draft(writer, created, "wpmcp seopress", "<p>x</p>")
+    item = tool(writer, "update_draft", content_id=item["id"], expected_version=item["version"],
+                seo=seo)  # fmt: skip
+    read = tool(writer, "get_content", content_id=item["id"])["seo"]
+    assert read["plugin"] == "seopress"
+    assert (read["title"], read["description"], read["focus_keyphrase"]) == (
+        "Books & more",
+        "Line one",
+        "first",
+    )
+    assert meta(item["id"], "_seopress_titles_title") == "Books & more"
+
+    # The focus keyphrase is the first of SEOPress's list; the others are kept.
+    dev_eval(
+        f"update_post_meta( {item['id']}, '_seopress_analysis_target_kw', 'first,extra two' );"
+    )
+    current = tool(writer, "get_content", content_id=item["id"])
+    tool(writer, "update_draft", content_id=item["id"], expected_version=current["version"],
+         seo={"focus_keyphrase": "new, focus", "description": None})  # fmt: skip
+    assert meta(item["id"], "_seopress_analysis_target_kw") == "new focus,extra two"
+    assert meta(item["id"], "_seopress_titles_desc") == ""
+    assert tool(writer, "get_content", content_id=item["id"])["seo"]["description"] is None
+
+    dev_eval(f"update_post_meta( {item['id']}, '_seopress_robots_index', 'yes' );")
+    flags = tool(writer, "get_content", content_id=item["id"])
+    assert flags["seo"]["noindex"] is True and flags["seo"]["robots_default"] is False
+
+    run = tool(writer, "bulk_update_seo", items=[{**entry(flags), "seo": {"og_title": "Shared"}}])
+    assert (
+        run["counts"]["changed"] == 1 and meta(item["id"], "_seopress_social_fb_title") == "Shared"
+    )
+    again = tool(writer, "bulk_update_seo", items=[{**entry(flags), "seo": {"og_title": "Shared"}}])
+    assert again["unchanged"] == [item["id"]]
+    tool(writer, "undo_bulk_change", batch_id=run["batch_id"])
+    assert meta(item["id"], "_seopress_social_fb_title") == ""
+
+
+def test_seo_fields_are_refused_without_exactly_one_seo_plugin(writer, created, seo_plugins):
+    seo_plugins()
+    assert tool(writer, "get_site_overview")["seo_plugin"] is None
+    refused = attempt(writer, "create_draft", type="post", lang="en", title="wpmcp no seo plugin",
+                      seo={"title": "x"})  # fmt: skip
+    assert refused["isError"] is True and "No SEO plugin is active" in str(refused)
+    assert tool(writer, "search_content", query="wpmcp no seo plugin", status="draft")["total"] == 0
+    item = draft(writer, created, "wpmcp without seo", "<p>x</p>")
+    assert tool(writer, "get_content", content_id=item["id"])["seo"] is None
+    bulk = attempt(writer, "bulk_update_seo", items=[{**entry(item), "seo": {"title": "x"}}])
+    assert bulk["isError"] is True and "No SEO plugin" in str(bulk)
+
+    seo_plugins("all-in-one-seo-pack", "wp-seopress")
+    current = tool(writer, "get_content", content_id=item["id"])
+    change = {"expected_version": current["version"], "seo": {"title": "x"}, "title": "Changed"}
+    both = attempt(writer, "update_draft", content_id=item["id"], **change)
+    assert both["isError"] is True and "Both All in One SEO and SEOPress" in str(both)
+    assert tool(writer, "get_content", content_id=item["id"])["title"] == "wpmcp without seo"

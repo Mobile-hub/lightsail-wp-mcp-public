@@ -168,6 +168,8 @@ if ( function_exists( 'pll_languages_list' ) ) {
 echo "\n-- all in one seo\n";
 echo 'version: ' . ( defined( 'AIOSEO_VERSION' ) ? AIOSEO_VERSION : 'not active' ) . "\n";
 echo 'post model: ' . ( class_exists( '\\AIOSEO\\Plugin\\Common\\Models\\Post' ) ? 'yes' : 'no' ) . "\n";
+echo "\n-- seopress\n";
+echo 'version: ' . ( defined( 'SEOPRESS_VERSION' ) ? SEOPRESS_VERSION : 'not active' ) . "\n";
 echo 'rest fields on post: ' . implode( ', ', array_keys( $GLOBALS['wp_rest_additional_fields']['post'] ?? array() ) ) . "\n";
 
 echo "\n-- kses audit (would a save by a user without unfiltered_html change the content?)\n";

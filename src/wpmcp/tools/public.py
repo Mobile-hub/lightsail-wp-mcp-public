@@ -78,16 +78,17 @@ def register(registry: Registry, wp: WordPressClient) -> None:
             ),
         ] = None,
     ) -> dict[str, Any]:
-        """Whether the site's XML sitemap (All in One SEO's, or WordPress's own) lists
-        published posts and pages: the sitemaps found (from robots.txt or /sitemap.xml)
+        """Whether the site's XML sitemap (an SEO plugin's, or WordPress's own) lists
+        published posts and pages: the sitemaps found (from robots.txt, else /sitemap.xml,
+        /sitemaps.xml or /wp-sitemap.xml)
         with their number of addresses, and the published items it does not list, apart
         from those set to noindex. The XML itself is not returned."""
         published = await links(content_ids)
         robots = await fetch(site.origin + "/robots.txt")
         declared = _ROBOTS_SITEMAP.findall(robots.text) if robots.status == 200 else []
+        # sitemap.xml: All in One SEO, Yoast, Rank Math; sitemaps.xml: SEOPress.
         roots = [u for u in declared if site.on_site(u)] or [
-            site.origin + "/sitemap.xml",
-            site.origin + "/wp-sitemap.xml",
+            site.origin + path for path in ("/sitemap.xml", "/sitemaps.xml", "/wp-sitemap.xml")
         ]
         sitemaps, listed, notes = await read_sitemaps(roots, fetch, site.on_site)
         if not declared:

@@ -1,7 +1,7 @@
 <?php
 /**
  * Read routes of the wpmcp/v1 namespace. Core REST cannot filter by language or show
- * translation links with Polylang free, and does not expose All in One SEO fields in a
+ * translation links with Polylang free, and does not expose SEO plugins' fields in a
  * usable shape; these routes do, read-only. Site-specific fields can be added to
  * get_content with the wpmcp_bridge_extra_fields filter (see helpers.php).
  *
@@ -207,10 +207,13 @@ function wpmcp_rest_overview(): array {
 		'tags'                 => (int) wp_count_terms( array( 'taxonomy' => 'post_tag', 'hide_empty' => false ) ),
 		'front_page'           => 'page' === get_option( 'show_on_front' ) ? (int) get_option( 'page_on_front' ) : 'latest posts',
 		'permalink_structure'  => (string) get_option( 'permalink_structure' ),
+		// The plugin that keeps the `seo` fields; two names (a+b) when both are active.
+		'seo_plugin'           => implode( '+', wpmcp_seo_plugins() ) ?: null,
 		'versions'             => array(
 			'wordpress' => get_bloginfo( 'version' ),
 			'polylang'  => defined( 'POLYLANG_VERSION' ) ? POLYLANG_VERSION : null,
 			'aioseo'    => defined( 'AIOSEO_VERSION' ) ? AIOSEO_VERSION : null,
+			'seopress'  => defined( 'SEOPRESS_VERSION' ) ? SEOPRESS_VERSION : null,
 			'bridge'    => WPMCP_BRIDGE_VERSION,
 		),
 	);

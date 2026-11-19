@@ -62,7 +62,9 @@ AllowShrink = Annotated[
 
 
 class Seo(BaseModel):
-    """All in One SEO fields. Only the fields you give are changed; null clears one."""
+    """SEO fields of the site's SEO plugin (All in One SEO or SEOPress; `seo.plugin` in
+    get_content says which). Only the fields you give are changed; null clears one. Refused
+    when the site has no SEO plugin active."""
 
     model_config = ConfigDict(extra="forbid")
     title: str | None = Field(None, max_length=300, description="Title for search results.")

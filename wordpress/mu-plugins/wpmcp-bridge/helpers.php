@@ -160,39 +160,6 @@ function wpmcp_post_summary( WP_Post $post ): array {
 	);
 }
 
-/** SEO fields kept by All in One SEO for a post, or null when the plugin is not active. */
-function wpmcp_seo( int $post_id ): ?array {
-	if ( ! class_exists( '\\AIOSEO\\Plugin\\Common\\Models\\Post' ) ) {
-		return null;
-	}
-	$row   = \AIOSEO\Plugin\Common\Models\Post::getPost( $post_id );
-	$found = $row && $row->exists();
-	$field = static fn ( string $name ) => $found && ! empty( $row->$name ) ? $row->$name : null;
-
-	// AIOSEO 5 keeps the focus keyphrase in its own column; older rows only in `keyphrases`.
-	$focus = $field( 'focus_keyword' );
-	if ( null === $focus ) {
-		$keyphrases = $field( 'keyphrases' );
-		if ( is_string( $keyphrases ) ) {
-			$keyphrases = json_decode( $keyphrases );
-		}
-		$focus = ( is_object( $keyphrases ) && ! empty( $keyphrases->focus->keyphrase ) ) ? $keyphrases->focus->keyphrase : null;
-	}
-	// With robots_default set, the site-wide defaults apply and the per-post flags are ignored.
-	$own_robots = $found && empty( $row->robots_default );
-	return array(
-		'title'           => $field( 'title' ),
-		'description'     => $field( 'description' ),
-		'focus_keyphrase' => is_string( $focus ) ? $focus : null,
-		'canonical_url'   => $field( 'canonical_url' ),
-		'robots_default'  => ! $own_robots,
-		'noindex'         => $own_robots && ! empty( $row->robots_noindex ),
-		'nofollow'        => $own_robots && ! empty( $row->robots_nofollow ),
-		'og_title'        => $field( 'og_title' ),
-		'og_description'  => $field( 'og_description' ),
-	);
-}
-
 /**
  * Site-specific, read-only fields for get_content (for example the meta of a custom
  * plugin), from another mu-plugin:

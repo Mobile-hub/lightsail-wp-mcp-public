@@ -134,8 +134,9 @@ def register(registry: Registry, settings: Settings, wp: WordPressClient) -> Non
     async def bulk_update_seo(
         ctx: Context, items: SeoItems, dry_run: DryRun = False
     ) -> dict[str, Any]:
-        """Set All in One SEO fields (title, description, focus keyphrase, Open Graph title
-        and description) of up to 50 posts or pages at once. Only the fields given that
+        """Set SEO fields (title, description, focus keyphrase, Open Graph title and
+        description; All in One SEO or SEOPress, whichever the site uses) of up to 50 posts
+        or pages at once. Only the fields given that
         differ are written; items already as asked are left unchanged. Take each item's
         version from search_content. Try dry_run first. On published items search engines
         and visitors get the new fields at once, so only with the user's explicit

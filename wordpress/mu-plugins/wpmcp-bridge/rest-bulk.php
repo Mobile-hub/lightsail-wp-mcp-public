@@ -64,7 +64,7 @@ function wpmcp_bulk_operations(): array {
 		array(
 			'ability'             => 'wpmcp/bulk-update-seo',
 			'label'               => 'Set SEO fields of many items',
-			'description'         => 'Set All in One SEO fields of up to 50 posts or pages; only the fields given that differ are written, and items already as asked are left alone. Each item is checked against its version, and the batch can be undone.',
+			'description'         => 'Set SEO fields (All in One SEO or SEOPress) of up to 50 posts or pages; only the fields given that differ are written, and items already as asked are left alone. Each item is checked against its version, and the batch can be undone.',
 			'route'               => '/bulk/seo',
 			'methods'             => 'POST',
 			'callback'            => 'wpmcp_rest_bulk_seo',
@@ -267,8 +267,9 @@ function wpmcp_rest_bulk_seo( WP_REST_Request $request ) {
 	if ( $blocked ) {
 		return $blocked;
 	}
-	if ( ! class_exists( '\\AIOSEO\\Plugin\\Common\\Models\\Post' ) ) {
-		return wpmcp_error( 'wpmcp_no_seo', 'All in One SEO is not active.' );
+	$plugin = wpmcp_seo_writable();
+	if ( is_wp_error( $plugin ) ) {
+		return $plugin;
 	}
 	$plan = static function ( WP_Post $post, array $item ) {
 		$wanted = (array) $item['seo'];

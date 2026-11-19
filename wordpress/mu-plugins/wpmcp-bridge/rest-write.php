@@ -206,6 +206,15 @@ function wpmcp_check_text( array $values ): ?WP_Error {
 	return null;
 }
 
+/** Refuses SEO fields when no single SEO plugin can take them (see seo.php). */
+function wpmcp_seo_check( array $seo ): ?WP_Error {
+	if ( ! $seo ) {
+		return null;
+	}
+	$plugin = wpmcp_seo_writable();
+	return is_wp_error( $plugin ) ? $plugin : null;
+}
+
 function wpmcp_seo_texts( array $seo ): array {
 	$texts = array();
 	foreach ( $seo as $key => $value ) {
@@ -322,43 +331,6 @@ function wpmcp_content_filtered( string $sent, string $stored ): bool {
 	return $normalise( $sent ) !== $normalise( $stored );
 }
 
-// ------------------------------------------------------------------------------- SEO
-
-/** Writes only the given All in One SEO fields (AIOSEO 5 saves patches, not whole rows). */
-function wpmcp_save_seo( int $post_id, array $seo ): ?WP_Error {
-	if ( ! $seo ) {
-		return null;
-	}
-	$model = '\\AIOSEO\\Plugin\\Common\\Models\\Post';
-	if ( ! class_exists( $model ) ) {
-		return wpmcp_error( 'wpmcp_no_seo', 'All in One SEO is not active: the SEO fields were not saved.' );
-	}
-	$data = array();
-	foreach ( array( 'title', 'description', 'og_title', 'og_description' ) as $key ) {
-		if ( array_key_exists( $key, $seo ) ) {
-			$data[ $key ] = null === $seo[ $key ] ? '' : sanitize_text_field( $seo[ $key ] );
-		}
-	}
-	if ( array_key_exists( 'focus_keyphrase', $seo ) ) {
-		$focus      = null === $seo['focus_keyphrase'] ? '' : sanitize_text_field( $seo['focus_keyphrase'] );
-		$row        = $model::getPost( $post_id );
-		$keyphrases = $row->exists() && ! empty( $row->keyphrases ) ? $row->keyphrases : null;
-		if ( is_string( $keyphrases ) ) {
-			$keyphrases = json_decode( $keyphrases );
-		}
-		// Keep the additional keyphrases; replace only the focus one.
-		$keyphrases                   = $model::getKeyphrasesDefaults( is_object( $keyphrases ) ? $keyphrases : null );
-		$keyphrases->focus->keyphrase = $focus;
-		$data['keyphrases']           = json_decode( wp_json_encode( $keyphrases ), true );
-		$data['focus_keyword']        = '' === $focus ? null : $focus;
-	}
-	$result = $model::savePost( $post_id, $data );
-	if ( is_string( $result ) && '' !== $result ) {
-		return wpmcp_error( 'wpmcp_seo_failed', 'All in One SEO could not save the SEO fields.', 500 );
-	}
-	return null;
-}
-
 // --------------------------------------------------------------------------- content
 
 function wpmcp_write_result( int $id, array $notes = array(), ?string $sent_content = null ): array {
@@ -391,7 +363,7 @@ function wpmcp_rest_content_create( WP_REST_Request $request ) {
 		return wpmcp_error( 'wpmcp_no_title', 'A title is required.' );
 	}
 	$seo   = (array) ( $request['seo'] ?? array() );
-	$check = wpmcp_check_text( wpmcp_seo_texts( $seo ) );
+	$check = wpmcp_check_text( wpmcp_seo_texts( $seo ) ) ?? wpmcp_seo_check( $seo );
 	if ( $check ) {
 		return $check;
 	}
@@ -531,7 +503,7 @@ function wpmcp_edit_guard( WP_Post $post, WP_REST_Request $request ): ?WP_Error 
 /** The fields of update_draft (and update_published_content), after the guard. */
 function wpmcp_apply_content_update( WP_Post $post, WP_REST_Request $request, array $notes = array() ) {
 	$seo   = (array) ( $request['seo'] ?? array() );
-	$check = wpmcp_check_text( wpmcp_seo_texts( $seo ) );
+	$check = wpmcp_check_text( wpmcp_seo_texts( $seo ) ) ?? wpmcp_seo_check( $seo );
 	if ( $check ) {
 		return $check;
 	}
