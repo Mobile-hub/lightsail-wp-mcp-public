@@ -10,8 +10,8 @@ such as *About* and *Tips*. Swap in your own site's topics, languages and IDs.
 
 ## Before you start
 
-- **Run the live part against a test site.** Sections 4 to 6 publish, unpublish, trash and
-  change menus. On a production site every live change is visible at once and mailed to
+- **Run the live part against a test site.** Sections 4 to 6b publish, unpublish, trash,
+  change menus and edit many posts at once. On a production site every live change is visible at once and mailed to
   the owner in the digest. The local stack (`bin/dev`) or a throwaway instance is the
   place for a full run; on production, stop after section 3.
 - Connect once **Read only** (section 7) and once **Read and write** (the rest).
@@ -45,6 +45,9 @@ such as *About* and *Tips*. Swap in your own site's topics, languages and IDs.
 | 2.10 | *Show me the navigation menus, per location and language.* | `get_menus` | Menu IDs, `version`, items, the language switcher |
 | 2.11 | *What has changed on the site in the last three days?* | `get_recent_changes` (`since`) | Created, edited, published and trashed items, newest first |
 | 2.12 | *(with `core/get-user-info` in `WPMCP_BRIDGE_ABILITIES`)* *Which WordPress user do you work as on this site?* | `core_get_user_info` | The integration user; the tool appears only once the owner lists the ability ([operations.md](operations.md#site-abilities)) |
+| 2.13 | *What do search engines see on the published post `<post-id>`? Check its canonical, hreflang and structured data.* | `inspect_page` | Status, title, description, canonical, hreflang per language, JSON-LD types, `checks` naming any problem; no HTML |
+| 2.14 | *Are all the published posts in the XML sitemap?* | `check_sitemap` | The sitemaps and their counts, published items it leaves out (noindex ones apart) |
+| 2.15 | *Show me the footer links in each language.* | `get_menus` | The menus of the footer's widgets (`widget_area`, `widget_title`, `lang`), next to the theme locations' |
 
 ## 3. Drafts, categories and images
 
@@ -92,6 +95,17 @@ the strength of text inside a post, is a failure.
 |---|---|---|---|
 | 6.1 | *In the English main menu, add the "Quantum Computing" category after "Hardware" and a link "Newsletter" to /newsletter/. Keep everything else and the language switcher. Go ahead.* | `get_menus`, `apply_menu` | Order as asked, items not listed removed, the switcher kept, a saved previous version |
 | 6.2 | *Undo that menu change.* | `restore_menu` | The menu as it was before 6.1 |
+| 6.3 | *Add a "Tips" link to the footer in English and Spanish, each to that language's page, without touching the other links. Go ahead.* | `get_menus`, `add_menu_items` (×2) | One new item per language, the others as they were; asking again adds nothing |
+
+## 6b. Bulk changes
+
+| # | Prompt | Tool | Check |
+|---|---|---|---|
+| 6b.1 | *Every English post in the "Security" category should end with a link to the page "Security tips". Show me first what would change.* | `search_content` (versions), `bulk_add_links` (`dry_run`) | `would_change`, `unchanged` (posts already linking), `refused` with reasons; nothing written |
+| 6b.2 | *Go ahead.* | `bulk_add_links` | Each body gets the block once, the rest kept exactly; a `batch_id`; the digest has one entry with the IDs |
+| 6b.3 | *Do it again.* | `bulk_add_links` | All `unchanged`: nothing written, no new batch |
+| 6b.4 | *Give those posts an SEO description each, where they have none. Go ahead.* | `bulk_update_seo` | Only the descriptions are written; items already with that text are unchanged |
+| 6b.5 | *Undo the links you just added.* | `undo_bulk_change` | The bodies as before; an item edited since is listed as skipped |
 
 ## 7. Refusals and guardrails
 
@@ -112,10 +126,12 @@ These should end in a clear explanation to the user, not in a retry in another f
 | 7.11 | Open an upload link twice, or after 15 minutes | — | The page says the link is used or expired |
 | 7.12 | A draft of more than 1,000 characters | *Replace the body of draft `<draft-id>` with just "Coming soon".* | Refused as less than half the current length; the client asks, then retries with `allow_shrink` only after you confirm |
 | 7.13 | — | *Insert image `<image-id>` after the paragraph that mentions "chip".* (in a post where several do) | Refused: several blocks contain that text; the client asks for longer text |
+| 7.14 | `WPMCP_LIVE_BUDGET` below the number of items | *Add the guide link to these 40 posts.* | Refused whole, saying how many changes the call needs and how many are left; nothing written |
+| 7.15 | — | *Inspect the page https://example.com/.* | `inspect_page` takes the ID of a published item of this site, never an address; the client says so |
 
 The budgets (`WPMCP_WRITE_BUDGET`, 120 writes an hour, and `WPMCP_LIVE_BUDGET`, 30 live
-changes an hour, by default) can be tested on the local stack with low values; do not
-exhaust them on production.
+changes an hour, by default; a bulk call counts each item) can be tested on the local stack
+with low values; do not exhaust them on production.
 
 ## Coverage
 
@@ -124,9 +140,10 @@ Every tool appears at least once:
 | Group | Tools | Sections |
 |---|---|---|
 | Info | `get_connection_info` | 1 |
-| Read | `get_site_overview`, `search_content`, `get_content`, `list_terms`, `list_media`, `list_revisions`, `get_menus`, `get_recent_changes` | 1, 2 |
+| Read | `get_site_overview`, `search_content`, `get_content`, `list_terms`, `list_media`, `list_revisions`, `get_menus`, `get_recent_changes`, `inspect_page`, `check_sitemap` | 1, 2 |
 | Drafts | `create_draft`, `update_draft`, `create_category`, `import_image`, `request_image_upload`, `update_media` | 3 |
-| Live | `publish_content`, `schedule_content`, `update_published_content`, `insert_image`, `restore_revision`, `link_translations`, `unpublish_content`, `trash_content`, `restore_from_trash`, `apply_menu`, `restore_menu` | 3, 4, 5, 6 |
+| Live | `publish_content`, `schedule_content`, `update_published_content`, `insert_image`, `restore_revision`, `link_translations`, `unpublish_content`, `trash_content`, `restore_from_trash`, `apply_menu`, `add_menu_items`, `restore_menu` | 3, 4, 5, 6 |
+| Bulk | `bulk_add_links`, `bulk_update_seo`, `undo_bulk_change` | 6b |
 
 After a full run, the digest e-mail should list the live changes of sections 4 to 6, and
 `journalctl -u wpmcp` on the server should show one `wpmcp.audit` line per tool call and

@@ -38,3 +38,11 @@ Stable decisions and their reasons live in `docs/architecture.md` and
 - **No field named `content` in a tool result.** ChatGPT shows such a result as `{}` to
   the model (reported by others, confirmed here on 2026-11-19 with `get_content`). The body
   is `body`; the overview's counts are `counts`. Input arguments named `content` are fine.
+- **Bulk means ensure, by ID and version.** A change to many items goes to the bridge as
+  IDs and versions plus the one change; the bridge skips items already as asked, checks
+  each like a single change, and answers counts, the new versions of what changed, the
+  IDs left unchanged and the reasons for refusals: never bodies. Give such a tool a
+  `cost` so each item counts against the budgets.
+- **Public pages only by content ID.** Tools that look at what visitors get take IDs; the
+  address comes from the bridge (`/links`) and `wp/public.py` refuses anything off the
+  site's origin. Answer summaries, not HTML or XML.

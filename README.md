@@ -33,11 +33,16 @@ model, and expect to adapt the deployment to your server.
 | 4 | Drafts, translations, SEO, categories, images | done |
 | 5 | Publishing and other live operations | done |
 | 6 | Menus | done |
+| 7 | Bulk changes, public SEO checks, menus of widgets | done |
 
 Read tools (`wp:read`): `get_connection_info`, `get_site_overview`, `search_content` (by
-language, status, category, missing translations), `get_content` (body, SEO, site-specific
-extra fields, `version`; a long body in parts), `list_terms`, `list_media`,
-`list_revisions`, `get_menus`, `get_recent_changes`.
+language, status, category, missing translations; with each item's `version`),
+`get_content` (body, SEO, site-specific extra fields, `version`; a long body in parts),
+`list_terms`, `list_media`, `list_revisions`, `get_menus` (theme locations and menu
+widgets, such as a footer's link lists), `get_recent_changes`, `inspect_page` (what search
+engines see on a published item: status, canonical, hreflang, robots, Open Graph, JSON-LD
+types; fetched as a visitor, by ID) and `check_sitemap` (published items the XML sitemap
+leaves out).
 
 Draft tools (`wp:write`), none of which changes what visitors see: `create_draft` (in one
 language, optionally linked as a translation, with categories, featured image and SEO),
@@ -50,9 +55,15 @@ and undoable: `publish_content`, `schedule_content`, `unpublish_content`,
 `update_published_content` (the state before is kept as a revision), `insert_image` (an
 image into a body without rewriting it; drafts too), `restore_revision`,
 `trash_content` and `restore_from_trash` (never a permanent delete), `link_translations`,
-`apply_menu` and `restore_menu` (menus shown by a theme location; the last 5 versions are
-kept). They have their own hourly budget, protected pages, and an hourly digest e-mail to
-the site's admin address.
+`apply_menu`, `add_menu_items` (keeps the other items) and `restore_menu` (menus shown by a
+theme location or a menu widget; the last 5 versions are kept). They have their own hourly
+budget, protected pages, and an hourly digest e-mail to the site's admin address.
+
+Bulk tools (`wp:write`), for one change on up to 50 posts and pages per call without their
+bodies travelling: `bulk_add_links` (a block linking to one page, added only where the body
+does not link to it yet), `bulk_update_seo` (only the fields that differ) and
+`undo_bulk_change`. Items already as asked are left unchanged, each item is checked
+against its `version`, a dry run shows the plan, and each item counts against the budgets.
 
 Site abilities: abilities of WordPress core or other plugins that the owner lists by name
 on the WordPress side become tools of their own, typed by their schema and confined to the

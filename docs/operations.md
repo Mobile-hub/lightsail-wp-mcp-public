@@ -172,9 +172,10 @@ subdomain), or remove the integration user's Application Password in WordPress.
 
 ## Limits
 
-`WPMCP_WRITE_BUDGET` (120 write calls per connection and hour), `WPMCP_LIVE_BUDGET` (of
+`WPMCP_WRITE_BUDGET` (120 changes per connection and hour), `WPMCP_LIVE_BUDGET` (of
 those, 30 that change what visitors see: publishing, live edits, trash, translation links,
-menus; 0 turns them off), `WPMCP_MEDIA_MAX_BYTES` (10 MB per image; Apache allows 11 MB on
+menus, bulk changes; 0 turns them off; a bulk call counts one per item, a dry run none, and
+one that would go over is refused whole), `WPMCP_MEDIA_MAX_BYTES` (10 MB per image; Apache allows 11 MB on
 `/upload/`), `WPMCP_UPLOAD_TTL` (900 s). Override them in the site file
 (`WPMCP_WRITE_BUDGET=60`) and deploy.
 
@@ -190,7 +191,15 @@ menus; 0 turns them off), `WPMCP_MEDIA_MAX_BYTES` (10 MB per image; Apache allow
 - **Undo.** A live edit returns `before` (the revision with the old text, and the old
   categories, image, slug and SEO); `restore_revision` puts text back; trashed items come
   back as drafts; `restore_menu` restores the last saved version of a menu (5 are kept, in
-  the `wpmcp_menu_backups` option).
+  the `wpmcp_menu_backups` option); `undo_bulk_change` puts back a bulk change (the last 10
+  batches are kept, in the `wpmcp_batches` option: for links the revision kept before each
+  item changed, for SEO the old values), item by item, skipping those edited since.
+- **Bulk changes in the digest.** One line per batch, with the IDs it changed on published
+  items.
+- **Menus.** The menus the tools can change are those of theme locations and those of
+  Navigation Menu widgets in the theme's widget areas (a classic theme's footer, with
+  Polylang's widget language). Which menu a location or a widget shows is set in wp-admin
+  only.
 
 Images are always new uploads; removing one is done in wp-admin (the tools never delete).
 
@@ -208,6 +217,13 @@ which receives and returns the list of names. At most 20; `wpmcp/*` names are ig
 The service picks the list up within ten minutes; then use "refresh tools" in ChatGPT, or
 reconnect Claude. `wp eval 'print_r( array_keys( wp_get_abilities() ) );'` on the server
 shows what the site has.
+
+A site mu-plugin can also register abilities of its own for the site's data, for example
+a read-only one that lists the posts of a custom field (a series, a product line) with each
+post's `version`, so that `bulk_add_links` or `bulk_update_seo` can act on them without
+reading any body. Register it on `wp_abilities_api_init` with `readonly` annotations and a
+`permission_callback` such as `current_user_can( 'edit_posts' )`, and list it with the
+filter.
 
 Each ability runs as the integration user, so it only does what that user's fixed
 capabilities allow (`core/get-site-info`, for example, needs `manage_options` and is

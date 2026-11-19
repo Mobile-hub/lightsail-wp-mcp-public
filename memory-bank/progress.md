@@ -46,6 +46,10 @@
   idempotency hints; bridge operations as abilities; owner-listed site abilities as tools.
   448 tests, 99% coverage, on the local stack (WordPress 7.1.5).
 
+- 2026-11-19 — 0.8.0 (bridge 0.8.0): bulk links and SEO with undo, per-item budgets,
+  `inspect_page`, `check_sitemap`, menus of widgets and `add_menu_items`; the local stack
+  gains a widget area (dev-only mu-plugin) and footer menus. 480 tests, 99% coverage.
+
 ## Not done
 - Connecting Claude.
 - Trying the live tools against the real products (ChatGPT, Claude).
@@ -58,3 +62,5 @@
 - ChatGPT's tool-result budget is undocumented: `DEFAULT_PART` (8,000 characters) is a
   guess with margin. If long pages still fail, lower it before anything else.
 - `insert_image` has not yet been tried against the real products.
+- The bulk tools, `inspect_page` and `check_sitemap` have not yet been tried against the
+  real products; the public reader has only been tried against the local stack.

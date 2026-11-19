@@ -3,7 +3,18 @@
 _Updated 2026-11-19._
 
 ## Current focus
-0.7.0 (bridge 0.7.0) after reviewing WordPress's MCP Adapter (0.7.1, pre-1.0, no OAuth)
+0.8.0 (bridge 0.8.0), not yet deployed: bulk "ensure" changes without bodies
+(`bulk_add_links`, `bulk_update_seo`, `undo_bulk_change`; `rest-bulk.php`,
+`tools/bulk.py`), budgets that count each item (`ToolSpec.cost`, `SlidingWindow.allow(count=)`),
+`search_content` with versions, `inspect_page` and `check_sitemap` reading the public site by
+content ID (`wp/public.py`, `tools/public.py`), menus of Navigation Menu widgets (a classic
+theme's footer) in `get_menus`/`apply_menu`/`restore_menu`, and `add_menu_items`. Prompted
+by ChatGPT adding the same link to many posts one read-and-rewrite at a time.
+Search Console and AIOSEO/theme site-wide settings deliberately not exposed
+(`docs/architecture.md`). A site deployment can add read-only abilities that select its
+own posts (a custom field) with versions, so the bulk tools need no reads.
+
+Then, 0.7.0 (bridge 0.7.0) after reviewing WordPress's MCP Adapter (0.7.1, pre-1.0, no OAuth)
 and the Abilities API (core since 6.9, read abilities only): nothing replaced, three
 levers taken. Tools declare `outputSchema` + `structuredContent` and `idempotentHint`;
 every bridge operation is a `wpmcp/*` ability that its route runs (`abilities.php`);
@@ -65,6 +76,12 @@ filter mu-plugin, deployed through `EXTRA_MU_PLUGINS`.
   `WPMCP_BRIDGE_ALLOWED_IPS` set to the bridge gateway).
 
 ## Decisions taken
+- 2026-11-19: bulk changes are "ensure", never "replace": an item already as asked is
+  answered unchanged and not written, every item keeps the single-item checks, a call is
+  capped at 50 items and counts one budget unit per item (refused whole if over). Public
+  pages are fetched by the service, by content ID only (never a URL argument), without
+  credentials, on the site's own origin. Menus shown by widgets count as shown menus; the
+  widget settings are read, never written.
 - 2026-11-16: no platform detection; the site file names the platform and each platform
   has its own files. Menus are changed without `edit_theme_options`: the bridge checks the
   menu (assigned to a location) and types the items itself. Live changes are separate

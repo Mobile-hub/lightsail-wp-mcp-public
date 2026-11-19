@@ -45,8 +45,9 @@ ChatGPT / Claude ──HTTPS──▶ Apache ──unix──▶ wpmcp serve ─
 3. The MCP transport checks `Host` and parses the message.
 4. `WpMcp.call_tool` checks the tool's scope against the principal, refuses unknown
    arguments, spends one unit of the connection's hourly write budget for write tools
-   (and of the lower live budget for tools that change what visitors see), writes the
-   audit line, and runs the tool.
+   (and of the lower live budget for tools that change what visitors see; a bulk call
+   one unit per item, a dry run none, all or nothing), writes the audit line, and runs
+   the tool.
 5. A write tool calls a bridge route; the bridge applies WordPress capabilities, the
    status rules (drafts only, or live only), the protected pages and the version check,
    and answers with the saved item.
@@ -59,6 +60,10 @@ ChatGPT / Claude ──HTTPS──▶ Apache ──unix──▶ wpmcp serve ─
 | Bridge operations as abilities, routes run them | One definition per operation; the standard schema validation, permission check and lifecycle hooks for every caller; WP-CLI, WordPress's AI client or an MCP Adapter server can reuse them; ready for a later move to the Adapter | Plain REST routes only (0.6 and earlier); the service calling `/wp-abilities/v1` (method mapping, permission run twice, abilities would have to be shown in REST) |
 | MCP Adapter not used yet | Checked on 2026-11-19: 0.7.1 is pre-1.0 and has no OAuth (hosted ChatGPT and claude.ai cannot connect to it on their own; PR #437 has no scopes or second factor), no Origin check, sessions in user meta, no budgets. Revisit when it reaches 1.0 and OAuth with scopes is in core (targeted for 7.3): the service could then keep consent, gate and budgets in front of an Adapter server listing the `wpmcp/*` abilities | An Adapter custom server behind this service; the Adapter with an OAuth plugin (tokens in the WordPress database) |
 | Site abilities listed on the WordPress side, each its own tool | The bridge enforces the list even if the service is compromised; one place to change it; each tool keeps a schema, a scope and budgets | A list in the service; every public ability; one tool that runs any listed ability by name (a generic tool) |
+| Bulk changes as "ensure" operations in the bridge, by ID and version | The same change on hundreds of items without a body travelling either way (about 50 tokens an item, against a read and a rewrite of the whole body); an item already as asked is not written, so a repeat or a retry after a partial failure is safe; each item keeps every single-item check (version, lock, protected, status, kses); a batch can be undone | A bulk "replace" taking bodies; per-item calls of `update_published_content` (the token cost and the body truncation risk of 0.6) |
+| Public pages read by the service, by content ID | What a visitor and a search engine get (no login, the real theme and SEO output) without opening a generic fetch: the address comes from the bridge, only on the site's own origin, no credentials, no redirects followed; summaries, never the HTML | Rendering in PHP inside the bridge (would run as the integration user); a fetch tool taking a URL (rule 2) |
+| Search Console and site-wide SEO or theme settings not exposed | Search Console needs Google OAuth and internet access from the service, which has none by design: a dedicated connector fits better. AIOSEO's global settings, breadcrumbs and the theme's options are options and themes (never exposed); they are changed in wp-admin and checked with `inspect_page` | A Google token in the service; option writes for the integration user |
+| Menus of widgets as well as theme locations | Classic themes show footer and sidebar link lists with Navigation Menu widgets (one per language with Polylang); the bridge reads the widget settings to know which menus are shown, never writes them | `edit_theme_options` for the integration user; a footer tool tied to one theme |
 | Same machine | The WordPress credential can be restricted to loopback | Lambda or a second instance (documented fallback; needs the credential to work over the internet) |
 | One process, not gateway + upstream | Both halves are ours; scopes cannot be forged between processes; saves memory on a 1 GB instance | The two-process layout of `editorial.workflow` |
 | Pre-registered confidential clients | Removes the open registration endpoint | Client ID Metadata Documents (possible later, with pinned metadata) |

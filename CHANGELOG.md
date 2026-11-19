@@ -6,6 +6,51 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-19
+
+Bulk changes that do not move bodies, checks of what search engines see, and the menus of
+widgets (a classic theme's footer). Prompted by a client adding the same link to many
+posts one read-and-rewrite at a time.
+
+### Added
+- `bulk_add_links`: one block with a link to a published post or page, added to up to 50
+  posts or pages per call where the body does not link to it yet (at the end, or inside a
+  body's closing wrapper tags). Bodies are neither read nor sent; each item is checked
+  against its `version` (from `search_content`), the editor lock, protected items, its
+  language and what kses would strip, and refused on its own; `dry_run` shows the plan.
+- `bulk_update_seo`: All in One SEO fields of up to 50 items; only the fields that differ
+  are written.
+- `undo_bulk_change`: puts back a batch (the last 10 are kept) item by item, skipping
+  items changed since. Link changes keep a revision of each item first.
+- `inspect_page`: a published item's public page as a visitor gets it, summarised: status
+  and redirect, title, description, robots, canonical, hreflang, Open Graph, JSON-LD types,
+  H1 headings, and `checks` naming problems. By content ID only, never an address.
+- `check_sitemap`: the XML sitemaps (from robots.txt, or `/sitemap.xml`) and the published
+  items they leave out, noindex ones apart.
+- `add_menu_items`: adds items to a menu and keeps the others; items already in it are
+  skipped. The previous version is saved for `restore_menu`.
+- `search_content` answers each item's `version`.
+- Bridge 0.8.0: `wpmcp/bulk-add-links`, `wpmcp/bulk-update-seo`, `wpmcp/undo-bulk-change`
+  and `wpmcp/add-menu-items` abilities; an internal `/links` route (public addresses of
+  published items); the digest has one line per batch with its IDs.
+
+### Changed
+- `get_menus`, `apply_menu` and `restore_menu` also cover menus shown by Navigation Menu
+  widgets in the theme's widget areas (`widget_area`, `widget_area_name`, `widget_title`,
+  and the widget's Polylang language), not only theme locations. Which menu a widget
+  shows is never changed.
+- Budgets count changes, not calls: a bulk call counts one per item against both budgets
+  (a dry run none), and a call that would go over is refused whole, saying how many are
+  left. A call refused by the live budget no longer spends the write budget.
+- Local stack: the bridge files are mounted one by one, next to a dev-only mu-plugin that
+  registers a widget area; `bin/dev provision` adds footer menus as widgets. Run
+  `bin/dev up` once to recreate the container.
+
+### Not added
+- Search Console (needs Google OAuth and internet access from the service) and AIOSEO's or
+  the theme's site-wide settings (options and themes are never exposed): see
+  `docs/architecture.md`.
+
 ## [0.7.0] - 2026-11-19
 
 The bridge moves onto WordPress's Abilities API, and owner-listed abilities of core or
