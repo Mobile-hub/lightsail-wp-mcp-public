@@ -25,6 +25,8 @@
   Apache hardening; rehearsed on a real site, then used for a real migration.
 - 2026-11-17 — `docs/zero-to-ninja.md`, the walkthrough for a person (console, ChatGPT,
   Claude, SES sandbox and production access).
+- 2026-11-18 — `docs/prompts.md`: test prompts that call every tool and the refusals,
+  for trying the tools against the real clients (see "Not done").
 
 ## Not done
 - Connecting Claude.
