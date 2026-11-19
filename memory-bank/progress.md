@@ -62,7 +62,8 @@
   evidence: each candidate site's own pages were read for the hosts their images come
   from, and one image per host was fetched and re-encoded. Many shops (Fnac, El Corte
   Inglés, Wook, Bertrand, Waterstones, Bol...) and some publishers answer automated
-  clients with 403/406/429; they stay off until a refused address shows a host that works.
+  clients with 403/406/429, two only from the server's address; they stay off until a
+  refused address shows a host that works. 34 hosts deployed.
 
 ## Not done
 - Connecting Claude.
