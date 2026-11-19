@@ -392,11 +392,18 @@ function wpmcp_rest_link_translations( WP_REST_Request $request ) {
 
 // ------------------------------------------------------------------ record and digest
 
-/** Remembers a live change for the hourly digest: action, ID, time; never content. */
-function wpmcp_live_record( string $action, int $id ): void {
+/**
+ * Remembers a live change for the hourly digest: action, ID, time; never content. A bulk
+ * change (rest-bulk.php) is one entry with ID 0 and the IDs it changed in $ids.
+ */
+function wpmcp_live_record( string $action, int $id, array $ids = array() ): void {
 	$log   = get_option( WPMCP_BRIDGE_LOG_OPTION, array() );
 	$log   = is_array( $log ) ? $log : array();
-	$log[] = array( 'time' => time(), 'action' => $action, 'id' => $id );
+	$entry = array( 'time' => time(), 'action' => $action, 'id' => $id );
+	if ( $ids ) {
+		$entry['ids'] = array_values( array_map( 'intval', $ids ) );
+	}
+	$log[] = $entry;
 	update_option( WPMCP_BRIDGE_LOG_OPTION, array_slice( $log, -WPMCP_BRIDGE_LOG_MAX ), false );
 	if ( ! wp_next_scheduled( WPMCP_BRIDGE_DIGEST_EVENT ) ) {
 		wp_schedule_single_event( time() + HOUR_IN_SECONDS, WPMCP_BRIDGE_DIGEST_EVENT );
@@ -416,10 +423,15 @@ function wpmcp_send_live_digest(): void {
 	$lines = array();
 	foreach ( $log as $entry ) {
 		$when = gmdate( 'Y-m-d H:i', (int) $entry['time'] ) . ' UTC';
-		// Site abilities (site-abilities.php) change no single item: no ID, no edit link.
-		$lines[] = (int) $entry['id'] > 0
-			? sprintf( '%s  %s  #%d  %s', $when, $entry['action'], (int) $entry['id'], admin_url( 'post.php?post=' . (int) $entry['id'] . '&action=edit' ) )
-			: sprintf( '%s  %s', $when, $entry['action'] );
+		if ( (int) $entry['id'] > 0 ) {
+			$lines[] = sprintf( '%s  %s  #%d  %s', $when, $entry['action'], (int) $entry['id'], admin_url( 'post.php?post=' . (int) $entry['id'] . '&action=edit' ) );
+		} elseif ( ! empty( $entry['ids'] ) ) {
+			// A bulk change: the items it changed, by ID (wp-admin's revisions of each undo it).
+			$lines[] = sprintf( '%s  %s  (%d items: #%s)', $when, $entry['action'], count( $entry['ids'] ), implode( ', #', array_map( 'intval', $entry['ids'] ) ) );
+		} else {
+			// Site abilities (site-abilities.php) change no single item: no ID, no edit link.
+			$lines[] = sprintf( '%s  %s', $when, $entry['action'] );
+		}
 	}
 	$body = "Changes made through wpmcp (the AI assistant connection) on $site:\n\n" . implode( "\n", $lines )
 		. "\n\nEach one can be undone in wp-admin (revisions, trash). To stop all access: wpmcp-admin revoke-all on the server.\n";

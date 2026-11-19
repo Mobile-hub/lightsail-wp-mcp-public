@@ -171,6 +171,18 @@ def test_sliding_window():
     assert limiter.allow("ip", now=111)  # the first hit left the window
 
 
+def test_sliding_window_counts_several_at_once_or_none():
+    limiter = SlidingWindow(limit=5, window=10)
+    assert limiter.allow("grant", now=100, count=3)
+    assert limiter.remaining("grant", now=100) == 2
+    assert not limiter.allow("grant", now=101, count=3)  # all or nothing
+    assert limiter.remaining("grant", now=101) == 2
+    assert limiter.allow("grant", now=101, count=2)
+    assert limiter.remaining("grant", now=101) == 0
+    assert limiter.remaining("grant", now=112) == 5  # the window moved on
+    assert limiter.remaining("other") == 5
+
+
 def test_sliding_window_uses_the_monotonic_clock_by_default():
     limiter = SlidingWindow(limit=1, window=60)
     assert limiter.allow("ip") and not limiter.allow("ip")

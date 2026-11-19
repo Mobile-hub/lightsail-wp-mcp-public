@@ -22,6 +22,7 @@ LIVE_TOOLS = {
     "trash_content",
     "link_translations",
     "apply_menu",
+    "add_menu_items",
     "restore_menu",
 }
 V = "0123456789abcdef"
@@ -102,6 +103,19 @@ def test_read_only_connection_cannot_publish(live_app, live_client, clock, fake)
         ("link_translations", {"translations": {"en": 3, "es": 4}}, "/translations",
          {"items": {"en": 3, "es": 4}}),
         ("restore_menu", {"menu_id": 5}, "/menus/5/restore", {}),
+        ("add_menu_items",
+         {"menu_id": 5, "expected_version": V,
+          "items": [{"kind": "page", "id": 9, "title": "Guide"},
+                    {"kind": "link", "url": "https://example.org/x", "title": "X"}]},
+         "/menus/5/items",
+         {"expected_version": V, "items": [{"kind": "page", "id": 9, "title": "Guide"},
+                                           {"kind": "link", "url": "https://example.org/x",
+                                            "title": "X"}]}),
+        ("add_menu_items",
+         {"menu_id": 5, "expected_version": V, "items": [{"kind": "post", "id": 9}],
+          "position": 0},
+         "/menus/5/items",
+         {"expected_version": V, "items": [{"kind": "post", "id": 9}], "position": 0}),
     ],
 )  # fmt: skip
 def test_live_tools_map_to_their_bridge_routes(
@@ -282,7 +296,8 @@ def test_settings_read_protected_ids_and_live_budget(tmp_path):
 IDEMPOTENT = {
     "update_draft", "update_media", "publish_content", "schedule_content",
     "unpublish_content", "update_published_content", "insert_image", "restore_revision",
-    "trash_content", "link_translations", "apply_menu",
+    "trash_content", "link_translations", "apply_menu", "add_menu_items", "bulk_add_links",
+    "bulk_update_seo", "undo_bulk_change",
 }  # fmt: skip
 NOT_IDEMPOTENT = {
     "create_draft", "create_category", "import_image", "request_image_upload",

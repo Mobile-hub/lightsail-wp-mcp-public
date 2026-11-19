@@ -76,7 +76,8 @@ def register(registry: Registry, wp: WordPressClient) -> None:
     ) -> dict[str, Any]:
         """Find posts and pages, optionally by words, language, status or category, or those
         still missing a translation. Returns short plain-text excerpts, the language of each
-        item and the IDs of its translations; use get_content for the full text."""
+        item, the IDs of its translations and its `version` (enough for bulk_add_links and
+        bulk_update_seo); use get_content for the full text."""
         return await call(
             "/content",
             {
@@ -146,7 +147,9 @@ def register(registry: Registry, wp: WordPressClient) -> None:
         return await call(f"/content/{content_id}/revisions")
 
     async def get_menus() -> dict[str, Any]:
-        """Navigation menus per theme location and language, with their items."""
+        """Navigation menus the site shows, per language: those of theme locations (the
+        header) and those of menu widgets (`widget_area`, `widget_title`: the footer's link
+        lists, a sidebar), with their items and the version a change must name."""
         return await call("/menus")
 
     async def get_recent_changes(

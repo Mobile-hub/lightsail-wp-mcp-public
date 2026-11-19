@@ -32,6 +32,9 @@ class ToolSpec:
     # Repeating the call with the same arguments changes nothing more (reads; changes
     # guarded by `expected_version`, which a repeat fails). None: read tools say True.
     idempotent: bool | None = None
+    # How many changes a call makes, from its arguments, against both budgets (a bulk change
+    # counts each item; a dry run none). None: one.
+    cost: Callable[[dict[str, Any]], int] | None = None
     meta: dict[str, Any] = field(default_factory=dict)
 
     @property

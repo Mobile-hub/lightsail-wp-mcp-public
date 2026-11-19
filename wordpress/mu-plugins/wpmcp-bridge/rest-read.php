@@ -13,6 +13,7 @@ defined( 'ABSPATH' ) || exit;
 
 const WPMCP_BRIDGE_NS       = 'wpmcp/v1';
 const WPMCP_BRIDGE_PER_PAGE = 50;
+const WPMCP_BRIDGE_LINKS_MAX = 5000;
 
 function wpmcp_can_read(): bool {
 	return current_user_can( 'edit_posts' );
@@ -48,7 +49,7 @@ function wpmcp_read_operations(): array {
 		array(
 			'ability'     => 'wpmcp/search-content',
 			'label'       => 'Search posts and pages',
-			'description' => 'Posts and pages by words, language, status or category, or those still missing a translation: plain-text excerpts, languages and translation IDs.',
+			'description' => 'Posts and pages by words, language, status or category, or those still missing a translation: plain-text excerpts, languages, translation IDs and the version changes must name.',
 			'route'       => '/content',
 			'callback'    => 'wpmcp_rest_content_list',
 			'args'        => $page + array(
@@ -102,9 +103,23 @@ function wpmcp_read_operations(): array {
 		array(
 			'ability'     => 'wpmcp/get-menus',
 			'label'       => 'Show menus',
-			'description' => 'Navigation menus per theme location and language, with their items and versions.',
+			'description' => 'Navigation menus shown by a theme location or a menu widget (a footer, a sidebar), per language, with their items and versions.',
 			'route'       => '/menus',
 			'callback'    => 'wpmcp_rest_menus', // in rest-menus.php
+		) + $read,
+		// Internal: the wpmcp service compares the public pages it fetches (inspect_page,
+		// check_sitemap) with these. A route only, not an ability: no tool of its own.
+		array(
+			'ability'  => null,
+			'route'    => '/links',
+			'callback' => 'wpmcp_rest_links',
+			'args'     => array(
+				'ids' => array(
+					'type'     => 'array',
+					'items'    => array( 'type' => 'integer', 'minimum' => 1 ),
+					'maxItems' => 100,
+				),
+			),
 		) + $read,
 		array(
 			'ability'     => 'wpmcp/get-recent-changes',
@@ -245,7 +260,48 @@ function wpmcp_rest_content_list( WP_REST_Request $request ) {
 	}
 
 	$query = new WP_Query( $args );
-	return wpmcp_paged( $query, array_map( 'wpmcp_post_summary', $query->posts ), (int) $request['page'], (int) $request['per_page'] );
+	// With the version, a bulk change (rest-bulk.php) needs no read of each item first.
+	$items = array_map(
+		static fn ( WP_Post $post ) => array(
+			'id'      => (int) $post->ID,
+			'version' => wpmcp_content_version( $post, wpmcp_seo( $post->ID ) ),
+		) + wpmcp_post_summary( $post ),
+		$query->posts
+	);
+	return wpmcp_paged( $query, $items, (int) $request['page'], (int) $request['per_page'] );
+}
+
+/**
+ * Public addresses of published posts and pages (those given, or all of them, at most
+ * WPMCP_BRIDGE_LINKS_MAX): language, translations and whether SEO keeps it out of search.
+ */
+function wpmcp_rest_links( WP_REST_Request $request ): array {
+	$ids  = array_values( array_unique( array_map( 'intval', (array) ( $request['ids'] ?? array() ) ) ) );
+	$args = array(
+		'post_type'   => WPMCP_BRIDGE_TYPES,
+		'post_status' => 'publish',
+		'lang'        => '',
+		'numberposts' => $ids ? count( $ids ) : WPMCP_BRIDGE_LINKS_MAX,
+		'orderby'     => 'ID',
+		'order'       => 'ASC',
+	);
+	if ( $ids ) {
+		$args['post__in'] = $ids;
+	}
+	$items = array();
+	foreach ( get_posts( $args ) as $post ) {
+		$seo     = wpmcp_seo( $post->ID );
+		$items[] = array(
+			'id'           => (int) $post->ID,
+			'type'         => $post->post_type,
+			'lang'         => wpmcp_post_lang( $post->ID ),
+			'link'         => get_permalink( $post ),
+			'noindex'      => ! empty( $seo['noindex'] ),
+			'password'     => '' !== $post->post_password,
+			'translations' => wpmcp_post_translations( $post->ID ),
+		);
+	}
+	return array( 'items' => $items );
 }
 
 function wpmcp_rest_content_get( WP_REST_Request $request ): array {

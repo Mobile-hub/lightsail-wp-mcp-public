@@ -20,6 +20,8 @@ READ_TOOLS = {
     "list_revisions",
     "get_menus",
     "get_recent_changes",
+    "inspect_page",
+    "check_sitemap",
 }
 
 

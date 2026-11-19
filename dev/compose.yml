@@ -39,8 +39,11 @@ services:
       - "127.0.0.1:${WP_DEV_PORT:-8081}:80"
     volumes:
       - wp:/var/www/html
-      # The bridge plugin under development, mounted read-only like production (root-owned).
-      - ../wordpress/mu-plugins:/var/www/html/wp-content/mu-plugins:ro
+      # The bridge plugin under development, mounted read-only like production (root-owned),
+      # and a dev-only mu-plugin (dev/mu-plugins: a widget area the block theme lacks).
+      - ../wordpress/mu-plugins/wpmcp-bridge.php:/var/www/html/wp-content/mu-plugins/wpmcp-bridge.php:ro
+      - ../wordpress/mu-plugins/wpmcp-bridge:/var/www/html/wp-content/mu-plugins/wpmcp-bridge:ro
+      - ./mu-plugins/wpmcp-dev-site.php:/var/www/html/wp-content/mu-plugins/wpmcp-dev-site.php:ro
 
   # One-off WP-CLI runs: `bin/dev wp <args>`. Same files, same uid as Apache (33).
   wpcli:
@@ -51,7 +54,9 @@ services:
     environment: *wp-env
     volumes:
       - wp:/var/www/html
-      - ../wordpress/mu-plugins:/var/www/html/wp-content/mu-plugins:ro
+      - ../wordpress/mu-plugins/wpmcp-bridge.php:/var/www/html/wp-content/mu-plugins/wpmcp-bridge.php:ro
+      - ../wordpress/mu-plugins/wpmcp-bridge:/var/www/html/wp-content/mu-plugins/wpmcp-bridge:ro
+      - ./mu-plugins/wpmcp-dev-site.php:/var/www/html/wp-content/mu-plugins/wpmcp-dev-site.php:ro
       - ./:/dev-scripts:ro
 
 volumes:

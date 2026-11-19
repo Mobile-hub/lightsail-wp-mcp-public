@@ -135,12 +135,52 @@ $options = get_option( 'polylang' );
 $options['nav_menus'][ get_option( 'stylesheet' ) ]['primary'] = $menu_ids;
 update_option( 'polylang', $options );
 
+// Footer link lists as a classic theme shows them: one Navigation Menu widget per language
+// (Polylang's widget language) in a widget area (dev/mu-plugins registers it), and one
+// inactive widget whose menu the site does not show.
+$widget_menus = array();
+foreach ( array( 'en' => 'Contact', 'es' => 'Contacto', 'hidden' => 'Hidden' ) as $key => $title ) {
+	$name = "wpmcp dev footer $key";
+	$menu = wp_get_nav_menu_object( $name );
+	if ( ! $menu ) {
+		$menu_id = wp_create_nav_menu( $name );
+		wp_update_nav_menu_item(
+			$menu_id,
+			0,
+			array(
+				'menu-item-type'   => 'custom',
+				'menu-item-object' => 'custom',
+				'menu-item-url'    => 'https://example.org/' . strtolower( $title ),
+				'menu-item-title'  => $title,
+				'menu-item-status' => 'publish',
+			)
+		);
+		$menu = wp_get_nav_menu_object( $menu_id );
+	}
+	$widget_menus[ $key ] = (int) $menu->term_id;
+}
+update_option(
+	'widget_nav_menu',
+	array(
+		2             => array( 'title' => 'Links', 'nav_menu' => $widget_menus['en'], 'pll_lang' => 'en' ),
+		3             => array( 'title' => 'Enlaces', 'nav_menu' => $widget_menus['es'], 'pll_lang' => 'es' ),
+		4             => array( 'title' => 'Old', 'nav_menu' => $widget_menus['hidden'] ),
+		'_multiwidget' => 1,
+	)
+);
+$sidebars                        = get_option( 'sidebars_widgets', array() );
+$sidebars['wpmcp-dev-footer']    = array( 'nav_menu-2', 'nav_menu-3' );
+$sidebars['wp_inactive_widgets'] = array( 'nav_menu-4' );
+$sidebars['array_version']       = 3;
+update_option( 'sidebars_widgets', $sidebars );
+
 WP_CLI::success(
 	sprintf(
-		'languages: %s; categories: %s; posts: %s; menus: %s',
+		'languages: %s; categories: %s; posts: %s; menus: %s; footer menus: %s',
 		implode( ',', pll_languages_list() ),
 		wp_json_encode( $category_ids ),
 		wp_json_encode( $post_ids ),
-		wp_json_encode( $menu_ids )
+		wp_json_encode( $menu_ids ),
+		wp_json_encode( $widget_menus )
 	)
 );

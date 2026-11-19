@@ -226,6 +226,60 @@ function wpmcp_media_summary( WP_Post $attachment ): array {
 	);
 }
 
+/**
+ * A URL reduced for comparison: host and path in lower case, without scheme, query,
+ * fragment or trailing slash ('' when it has no host). Site-relative paths are read
+ * against the site's address.
+ */
+function wpmcp_link_key( string $url ): string {
+	$url = trim( html_entity_decode( $url, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
+	if ( str_starts_with( $url, '/' ) && ! str_starts_with( $url, '//' ) ) {
+		$url = home_url( $url );
+	}
+	$parts = wp_parse_url( $url );
+	if ( ! is_array( $parts ) || empty( $parts['host'] ) ) {
+		return '';
+	}
+	return strtolower( $parts['host'] . untrailingslashit( rawurldecode( $parts['path'] ?? '' ) ) );
+}
+
+/** Whether $html has a link (<a href>) to the address of $target. */
+function wpmcp_links_to( string $html, WP_Post $target ): bool {
+	$wanted = wpmcp_link_key( (string) get_permalink( $target ) );
+	if ( '' === $wanted || ! preg_match_all( '/<a\s[^>]*?\bhref\s*=\s*(["\'])(.*?)\1/is', $html, $found ) ) {
+		return false;
+	}
+	foreach ( $found[2] as $href ) {
+		if ( wpmcp_link_key( $href ) === $wanted ) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Elements that saving $html would remove for the current user (anyone without
+ * unfiltered_html, the integration user included: kses filters what it saves), as tag
+ * names. Body text is kept by kses; scripts, iframes, forms and the like are not.
+ */
+function wpmcp_kses_losses( string $html ): array {
+	if ( current_user_can( 'unfiltered_html' ) ) {
+		return array();
+	}
+	$count  = static function ( string $markup ): array {
+		preg_match_all( '#<([a-z][a-z0-9-]*)[\s/>]#i', $markup, $tags );
+		return array_count_values( array_map( 'strtolower', $tags[1] ) );
+	};
+	$after  = $count( wp_kses_post( $html ) );
+	$losses = array();
+	foreach ( $count( $html ) as $tag => $number ) {
+		if ( ( $after[ $tag ] ?? 0 ) < $number ) {
+			$losses[] = "<$tag>";
+		}
+	}
+	return $losses;
+}
+
 function wpmcp_error( string $code, string $message, int $status = 400 ): WP_Error {
 	return new WP_Error( $code, $message, array( 'status' => $status ) );
 }

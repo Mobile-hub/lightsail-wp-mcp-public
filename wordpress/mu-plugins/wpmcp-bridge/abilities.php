@@ -22,7 +22,7 @@ const WPMCP_BRIDGE_ABILITY_CATEGORY = 'wpmcp';
 
 /** Every operation of the bridge, in the shape the *_operations() functions return. */
 function wpmcp_operations(): array {
-	return array_merge( wpmcp_read_operations(), wpmcp_write_operations(), wpmcp_live_operations(), wpmcp_menu_operations() );
+	return array_merge( wpmcp_read_operations(), wpmcp_write_operations(), wpmcp_live_operations(), wpmcp_menu_operations(), wpmcp_bulk_operations() );
 }
 
 /** Ability annotations; the wpmcp service keeps its own (tools/), which match these. */

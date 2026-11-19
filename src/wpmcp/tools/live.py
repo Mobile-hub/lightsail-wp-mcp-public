@@ -1,8 +1,8 @@
 """Live tools (scope wp:write): what changes the site visitors see.
 
 Publish, schedule, unpublish, edit published items, insert an image into a body (drafts
-too), restore a revision, trash and untrash, link translations, and change or restore a
-menu. Each change names the version it was based on, is refused for protected items
+too), restore a revision, trash and untrash, link translations, and change, add to or
+restore a menu. Each change names the version it was based on, is refused for protected items
 (WPMCP_PROTECTED_IDS here; the front, posts
 and privacy pages and their translations in the bridge), counts against a separate, lower
 hourly budget, and can be undone: revisions, the trash, saved menu versions. The bridge
@@ -67,6 +67,23 @@ class MenuItem(BaseModel):
         None, max_length=200, description="Label. Default: the item's own title."
     )
     parent: int | None = Field(None, ge=0)
+
+
+class NewMenuItem(BaseModel):
+    """An item to add to a menu."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["post", "page", "category", "link"] = Field(
+        description="post/page/category: by id, in the menu's language, published. link: url "
+        "and title."
+    )
+    id: int | None = Field(None, ge=1)
+    url: str | None = Field(
+        None, max_length=500, description="For links: https://... or a site path /..."
+    )
+    title: str | None = Field(
+        None, max_length=200, description="Label. Default: the item's own title."
+    )
 
 
 def register(
@@ -280,20 +297,50 @@ def register(
         expected_version: MenuVersion,
         items: Annotated[list[MenuItem], Field(max_length=60)],
     ) -> dict[str, Any]:
-        """Replace the items of a menu shown by a theme location (see get_menus) with this
-        list, in order. Items not listed are removed (the language switcher is kept). The
-        previous version is saved: restore_menu puts it back. Never changes which menu a
-        location shows. Only with the user's explicit go-ahead."""
+        """Replace the items of a menu the site shows (a theme location or a menu widget
+        such as the footer's link lists; see get_menus) with this list, in order. Items not
+        listed are removed (the language switcher is kept); to add items and keep the
+        others, use add_menu_items. The previous version is saved: restore_menu puts it
+        back. Never changes which menu a location or widget shows. Only with the user's
+        explicit go-ahead."""
         body = {
             "expected_version": expected_version,
             "items": [item.model_dump(exclude_none=True) for item in items],
         }
         return await post(ctx, "apply_menu", f"/menus/{menu_id}", body)
 
+    async def add_menu_items(
+        ctx: Context,
+        menu_id: Annotated[int, Field(ge=1, description="Menu ID (get_menus).")],
+        expected_version: MenuVersion,
+        items: Annotated[list[NewMenuItem], Field(min_length=1, max_length=20)],
+        position: Annotated[
+            int | None,
+            Field(
+                ge=0,
+                description="Where the new items go: an index in the menu's items as get_menus "
+                "lists them (0: first). Default: the end, before a language switcher there.",
+            ),
+        ] = None,
+    ) -> dict[str, Any]:
+        """Add items to a menu the site shows (a theme location or a menu widget such as
+        the footer's link lists, one menu per language; see get_menus), keeping all the
+        others as they are. Items already in the menu (the same post, page, category or
+        link) are skipped, so a repeat adds nothing. Posts, pages and categories must be in
+        the menu's language: one call per language's menu. The previous version is saved:
+        restore_menu puts it back. Only with the user's explicit go-ahead."""
+        body = {
+            "expected_version": expected_version,
+            "items": [item.model_dump(exclude_none=True) for item in items],
+            "position": position,
+        }
+        return await post(ctx, "add_menu_items", f"/menus/{menu_id}/items", body)
+
     async def restore_menu(
         ctx: Context, menu_id: Annotated[int, Field(ge=1, description="Menu ID (get_menus).")]
     ) -> dict[str, Any]:
-        """Put a menu back to the version saved before its last change by apply_menu."""
+        """Put a menu back to the version saved before its last change by apply_menu or
+        add_menu_items."""
         return await post(ctx, "restore_menu", f"/menus/{menu_id}/restore", {})
 
     # (tool, title, destructive, idempotent): a repeat of a version-guarded change is
@@ -309,6 +356,8 @@ def register(
         (trash_content, "Move to trash", True, True),
         (link_translations, "Link translations", True, True),
         (apply_menu, "Change a menu", True, True),
+        # Items already in the menu are skipped: a repeat adds nothing.
+        (add_menu_items, "Add menu items", True, True),
         # Each call puts back the version saved before the last apply_menu.
         (restore_menu, "Restore a menu", True, False),
     ):

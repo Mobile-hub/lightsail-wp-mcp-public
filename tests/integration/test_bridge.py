@@ -223,7 +223,7 @@ def writer(password):
     clock = Clock()
     store = make_store(clock)
     # The whole module runs within one hour: more live changes than the default budget.
-    settings = make_settings(wp_url=WP_URL, wp_password=password, live_budget=200)
+    settings = make_settings(wp_url=WP_URL, wp_password=password, write_budget=500, live_budget=500)
     app = create_app(settings, store=store, clock=clock)
     with TestClient(app, base_url=BASE) as client:
         token, _ = access_token(app, clock, scope="wp:read wp:write")
@@ -816,7 +816,14 @@ def test_every_operation_is_an_ability_with_the_tools_annotations(writer):
     )
     client, token = writer
     tools = {t["name"]: t for t in rpc_result(rpc(client, token, "tools/list"))["tools"]}
-    python_only = {"get_connection_info", "import_image", "request_image_upload"}
+    # Public pages are read by the service itself; the bridge only gives their addresses.
+    python_only = {
+        "get_connection_info",
+        "import_image",
+        "request_image_upload",
+        "inspect_page",
+        "check_sitemap",
+    }
     site = {name for name, t in tools.items() if t["description"].startswith("Site ability")}
     names = {name.removeprefix("wpmcp/").replace("-", "_") for name in abilities}
     assert names == set(tools) - python_only - site
@@ -874,3 +881,235 @@ def test_listed_site_abilities_are_tools_confined_to_the_integration_user(writer
         + "echo rest_do_request( $q )->get_status();"
     )
     assert off_list.strip() == "404"
+
+
+# --- bulk changes, public pages and menu widgets (0.8.0)
+
+
+def published(writer, lang, title):
+    """A published fixture item (other tests leave drafts with the same words)."""
+    found = tool(writer, "search_content", lang=lang, query=title, status="publish")
+    return found["items"][0]
+
+
+def draft(writer, created, title, content, lang="en"):
+    item = tool(writer, "create_draft", type="post", lang=lang, title=title, content=content)
+    created["post"].append(item["id"])
+    return item
+
+
+def entry(item, version=None):
+    return {"content_id": item["id"], "expected_version": version or item["version"]}
+
+
+def body_of(writer, item_id):
+    return tool(writer, "get_content", content_id=item_id, max_chars=60_000)["body"]
+
+
+def test_search_results_carry_the_version(writer, created):
+    item = draft(writer, created, "wpmcp versioned search", "<p>x</p>")
+    found = tool(writer, "search_content", lang="en", status="draft", query="versioned search")
+    assert found["items"][0]["version"] == item["version"]
+
+
+def test_bulk_add_links_adds_one_link_where_missing_and_undoes(writer, created):
+    target = published(writer, "en", "Little Prince")
+    link = target["link"]
+    html = (
+        f'<section class="x-collection"><h2>Series</h2><p>See <a href="{link}">all</a>.</p>'
+        "</section>"
+    )
+    wrapped = draft(writer, created, "wpmcp bulk wrapped", "<article><div><p>A</p></div></article>")
+    blocks = draft(
+        writer,
+        created,
+        "wpmcp bulk blocks",
+        "<!-- wp:paragraph -->\n<p>B</p>\n<!-- /wp:paragraph -->",
+    )
+    linked = draft(writer, created, "wpmcp bulk linked", f'<p>Already: <a href="{link}">x</a></p>')
+    spanish = draft(writer, created, "wpmcp bulk es", "<p>es</p>", lang="es")
+    stale = draft(writer, created, "wpmcp bulk stale", "<p>stale</p>")
+    items = [entry(wrapped), entry(blocks), entry(linked), entry(spanish), entry(stale, "0" * 16)]
+    args = {"target_id": target["id"], "html": html, "position": "before_closing_tags"}
+
+    dry = tool(writer, "bulk_add_links", items=items, dry_run=True, **args)
+    assert dry["batch_id"] is None
+    assert dry["would_change"] == [wrapped["id"], blocks["id"]]
+    assert dry["unchanged"] == [linked["id"]]
+    assert {r["id"]: r["code"] for r in dry["refused"]} == {
+        spanish["id"]: "wpmcp_lang_mismatch",
+        stale["id"]: "wpmcp_stale",
+    }
+    assert body_of(writer, wrapped["id"]) == "<article><div><p>A</p></div></article>"
+
+    run = tool(writer, "bulk_add_links", items=items, **args)
+    assert run["counts"] == {"changed": 2, "unchanged": 1, "refused": 2}
+    assert body_of(writer, wrapped["id"]) == f"<article><div><p>A</p>{html}</div></article>"
+    assert body_of(writer, blocks["id"]).endswith(f"<!-- wp:html -->{html}<!-- /wp:html -->")
+    versions = {c["id"]: c["version"] for c in run["changed"]}
+    assert (
+        versions[wrapped["id"]] == tool(writer, "get_content", content_id=wrapped["id"])["version"]
+    )
+
+    again = tool(writer, "bulk_add_links", items=items, **args)
+    assert again["batch_id"] is None and again["counts"]["changed"] == 0
+    assert sorted(again["unchanged"]) == sorted([wrapped["id"], blocks["id"], linked["id"]])
+
+    undone = tool(writer, "undo_bulk_change", batch_id=run["batch_id"])
+    assert sorted(undone["undone"]) == sorted(versions) and undone["skipped"] == []
+    assert body_of(writer, wrapped["id"]) == "<article><div><p>A</p></div></article>"
+    assert "<a " not in body_of(writer, blocks["id"])
+    repeat = attempt(writer, "undo_bulk_change", batch_id=run["batch_id"])
+    assert repeat["isError"] is True and "already undone" in str(repeat)
+    unknown = attempt(writer, "undo_bulk_change", batch_id="0" * 12)
+    assert unknown["isError"] is True and "no batch" in str(unknown)
+
+
+def test_bulk_add_links_refuses_markup_kses_would_strip_and_bad_html(writer, created):
+    target = published(writer, "en", "Little Prince")
+    # An administrator's post with an iframe: the integration user saving it would lose it.
+    admin_item = int(
+        dev_eval(
+            "kses_remove_filters(); echo wp_insert_post( array( 'post_title' => 'wpmcp iframe',"
+            " 'post_content' => '<p>x</p><iframe src=\"https://example.org/\"></iframe>',"
+            " 'post_status' => 'draft' ) );"
+        )
+    )
+    created["post"].append(admin_item)
+    dev_eval(f"pll_set_post_language( {admin_item}, 'en' );")
+    item = tool(writer, "get_content", content_id=admin_item)
+    html = f'<p><a href="{target["link"]}">guide</a></p>'
+    result = tool(writer, "bulk_add_links", target_id=target["id"], html=html, items=[entry(item)])
+    assert result["refused"][0]["code"] == "wpmcp_markup_lost"
+    assert "<iframe>" in result["refused"][0]["reason"]
+    assert "iframe" in body_of(writer, admin_item)
+
+    no_link = attempt(
+        writer, "bulk_add_links", target_id=target["id"], html="<p>no link</p>", items=[entry(item)]
+    )
+    assert no_link["isError"] is True and target["link"] in str(no_link)
+    unpublished = attempt(
+        writer, "bulk_add_links", target_id=admin_item, html=html, items=[entry(item)]
+    )
+    assert unpublished["isError"] is True and "published post or page" in str(unpublished)
+
+
+def test_bulk_links_on_published_items_are_live_and_in_the_digest(writer, created):
+    target = published(writer, "en", "Little Prince")
+    item = draft(writer, created, "wpmcp bulk live", "<p>live</p>")
+    live = tool(writer, "publish_content", content_id=item["id"], expected_version=item["version"])
+    html = f'<p><a href="{target["link"]}">guide</a></p>'
+    run = tool(writer, "bulk_add_links", target_id=target["id"], html=html, items=[entry(live)])
+    assert run["changed"][0]["id"] == item["id"]
+    log = json.loads(dev_eval("echo wp_json_encode( get_option( 'wpmcp_live_log' ) );"))
+    batch = [e for e in log if run["batch_id"] in e["action"]]
+    assert batch and batch[-1]["ids"] == [item["id"]] and batch[-1]["id"] == 0
+    revisions = tool(writer, "list_revisions", content_id=item["id"])["items"]
+    assert revisions, "a revision is kept before a live change"
+    tool(writer, "undo_bulk_change", batch_id=run["batch_id"])
+    assert "<a " not in body_of(writer, item["id"])
+
+
+def test_bulk_update_seo_writes_only_what_differs(writer, created):
+    first = draft(writer, created, "wpmcp seo one", "<p>1</p>")
+    second = draft(writer, created, "wpmcp seo two", "<p>2</p>")
+    seo = {"title": "Bulk SEO title", "description": "Bulk description"}
+    run = tool(
+        writer,
+        "bulk_update_seo",
+        items=[{**entry(first), "seo": seo}, {**entry(second), "seo": {"title": "Only title"}}],
+    )
+    assert run["counts"]["changed"] == 2
+    item = tool(writer, "get_content", content_id=first["id"])
+    assert (
+        item["seo"]["title"] == "Bulk SEO title"
+        and item["seo"]["description"] == seo["description"]
+    )
+    assert item["version"] == {c["id"]: c["version"] for c in run["changed"]}[first["id"]]
+
+    # The same values again, with an old version: unchanged, not refused.
+    again = tool(writer, "bulk_update_seo", items=[{**entry(first), "seo": seo}])
+    assert again["unchanged"] == [first["id"]] and again["batch_id"] is None
+    # One field the same, one different: only the different one is written.
+    newer = tool(
+        writer,
+        "bulk_update_seo",
+        items=[{**entry(item), "seo": {"title": "Bulk SEO title", "description": None}}],
+    )
+    assert newer["counts"]["changed"] == 1
+    cleared = tool(writer, "get_content", content_id=first["id"])["seo"]
+    assert cleared["title"] == "Bulk SEO title" and cleared["description"] is None
+
+    tool(writer, "undo_bulk_change", batch_id=newer["batch_id"])
+    assert (
+        tool(writer, "get_content", content_id=first["id"])["seo"]["description"]
+        == seo["description"]
+    )
+    tool(writer, "undo_bulk_change", batch_id=run["batch_id"])
+    restored = tool(writer, "get_content", content_id=first["id"])["seo"]
+    assert restored["title"] is None and restored["description"] is None
+
+
+def test_menus_shown_by_widgets_and_adding_items(writer):
+    menus = tool(writer, "get_menus")["menus"]
+    footers = {m["lang"]: m for m in menus if m.get("widget_area") == "wpmcp-dev-footer"}
+    assert set(footers) == {"en", "es"}
+    assert footers["en"]["widget_title"] == "Links" and footers["en"]["location"] is None
+    assert footers["en"]["widget_area_name"] == "Dev footer"
+    assert "wpmcp dev footer hidden" not in {m["name"] for m in menus}  # inactive widget
+
+    footer = footers["en"]
+    before = [(i["kind"], i["title"]) for i in footer["items"]]
+    post_en = published(writer, "en", "Little Prince")
+    added = tool(
+        writer,
+        "add_menu_items",
+        menu_id=footer["menu_id"],
+        expected_version=footer["version"],
+        items=[
+            {"kind": "post", "id": post_en["id"], "title": "Guide"},
+            {"kind": "link", "url": "https://example.org/contact", "title": "Same link"},
+        ],
+        position=0,
+    )
+    assert [(i["kind"], i["title"]) for i in added["items"]] == [("post", "Guide"), *before]
+    assert "1 item(s) already in the menu were skipped." in added["notes"]
+    repeat = tool(
+        writer,
+        "add_menu_items",
+        menu_id=footer["menu_id"],
+        expected_version=added["version"],
+        items=[{"kind": "post", "id": post_en["id"]}],
+    )
+    assert repeat["version"] == added["version"] and "nothing changed" in repeat["notes"][0]
+    post_es = published(writer, "es", "Principito")
+    wrong = attempt(
+        writer,
+        "add_menu_items",
+        menu_id=footer["menu_id"],
+        expected_version=added["version"],
+        items=[{"kind": "post", "id": post_es["id"]}],
+    )
+    assert wrong["isError"] is True and "the menu is in en" in str(wrong)
+    restored = tool(writer, "restore_menu", menu_id=footer["menu_id"])
+    assert restored["version"] == footer["version"]
+
+    hidden = int(dev_eval("echo wp_get_nav_menu_object( 'wpmcp dev footer hidden' )->term_id;"))
+    refused = attempt(writer, "add_menu_items", menu_id=hidden, expected_version="0" * 16,
+                      items=[{"kind": "post", "id": post_en["id"]}])  # fmt: skip
+    assert refused["isError"] is True and "or a menu widget" in str(refused)
+
+
+def test_inspect_page_and_check_sitemap_read_the_public_site(writer):
+    post = published(writer, "en", "Little Prince")
+    page = tool(writer, "inspect_page", content_id=post["id"])
+    assert page["status"] == 200 and page["url"] == post["link"]
+    assert page["canonical"] == post["link"]
+    assert set(page["hreflang"]) >= {"en", "es", "pt"}
+    assert "BreadcrumbList" in page["json_ld_types"]
+    assert not [c for c in page["checks"] if "canonical" in c or "hreflang" in c]
+
+    ids = list(post["translations"].values())
+    found = tool(writer, "check_sitemap", content_ids=ids)
+    assert found["sitemaps"] and found["checked"] == len(ids)
+    assert found["listed"] == len(ids) and found["missing"] == []

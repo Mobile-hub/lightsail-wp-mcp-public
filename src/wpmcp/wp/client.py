@@ -3,7 +3,8 @@
 It reaches only that namespace (the plugin also denies everything else to the integration
 user), never follows redirects, caps response sizes and, in production, connects to the
 site's own loopback address while keeping the real host name for TLS and Host: the
-Application Password is accepted from loopback only.
+Application Password is accepted from loopback only. Public pages, read without the
+credential, go through ``public`` (wp/public.py).
 """
 
 from __future__ import annotations
@@ -86,8 +87,12 @@ class WordPressClient:
         *,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
+        from .public import PublicSite  # it imports this module
+
         token = base64.b64encode(f"{settings.wp_user}:{settings.wp_password}".encode()).decode()
         self._base = settings.wp_url + BRIDGE_PREFIX
+        # A separate client: no Authorization header ever goes to a public page.
+        self.public = PublicSite(settings, transport=transport)
         self._http = httpx.AsyncClient(
             transport=transport or _transport(settings),
             timeout=settings.wp_timeout,
@@ -101,6 +106,7 @@ class WordPressClient:
 
     async def aclose(self) -> None:
         await self._http.aclose()
+        await self.public.aclose()
 
     async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         return await self._request("GET", path, params=params)
