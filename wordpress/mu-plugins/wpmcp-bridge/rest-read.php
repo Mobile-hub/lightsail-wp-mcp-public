@@ -247,7 +247,12 @@ function wpmcp_rest_content_get( WP_REST_Request $request ): array {
 	return wpmcp_content_detail( get_post( (int) $request['id'] ) );
 }
 
-/** Everything about one post or page: what get_content returns, and what writes answer. */
+/**
+ * Everything about one post or page: what get_content returns, and what writes answer.
+ *
+ * Small fields first and the body last: a client that cuts a long answer short (ChatGPT
+ * drops whole lines past its budget) still gets the version, the status and the length.
+ */
 function wpmcp_content_detail( WP_Post $post ): array {
 	$thumb_id = (int) get_post_thumbnail_id( $post );
 	$seo      = wpmcp_seo( $post->ID );
@@ -255,14 +260,20 @@ function wpmcp_content_detail( WP_Post $post ): array {
 		require_once ABSPATH . 'wp-admin/includes/post.php';
 	}
 	// Someone else has the editor open (the ID of that user is not returned).
-	$lock = wp_check_post_lock( $post->ID );
+	$lock    = wp_check_post_lock( $post->ID );
+	$content = wpmcp_decode_emoji( $post->post_content );
 
 	return array_merge(
+		array(
+			'id'             => (int) $post->ID,
+			'version'        => wpmcp_content_version( $post, $seo ),
+			'being_edited'   => (bool) $lock,
+			'content_length' => mb_strlen( $content ),
+		),
 		wpmcp_post_summary( $post ),
 		array(
 			'slug'               => $post->post_name,
 			'excerpt'            => wpmcp_decode_emoji( $post->post_excerpt ),
-			'content'            => wpmcp_decode_emoji( $post->post_content ),
 			'content_format'     => has_blocks( $post->post_content ) ? 'blocks' : 'classic',
 			'categories'         => 'post' === $post->post_type ? wpmcp_terms_of( $post->ID, 'category' ) : array(),
 			'tags'               => 'post' === $post->post_type ? wpmcp_terms_of( $post->ID, 'post_tag' ) : array(),
@@ -272,12 +283,11 @@ function wpmcp_content_detail( WP_Post $post ): array {
 			'template'           => (string) get_page_template_slug( $post ),
 			'sticky'             => 'post' === $post->post_type && is_sticky( $post->ID ),
 			'password_protected' => '' !== $post->post_password,
-			'being_edited'       => (bool) $lock,
 			'edit_url'           => admin_url( 'post.php?post=' . $post->ID . '&action=edit' ),
 			'preview_url'        => 'publish' === $post->post_status ? null : get_preview_post_link( $post ),
 			'seo'                => $seo,
 			'extra'              => wpmcp_extra_fields( $post ),
-			'version'            => wpmcp_content_version( $post, $seo ),
+			'content'            => $content,
 		)
 	);
 }

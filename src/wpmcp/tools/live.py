@@ -1,8 +1,9 @@
 """Live tools (scope wp:write): what changes the site visitors see.
 
-Publish, schedule, unpublish, edit published items, restore a revision, trash and
-untrash, link translations, and change or restore a menu. Each change names the version it
-was based on, is refused for protected items (WPMCP_PROTECTED_IDS here; the front, posts
+Publish, schedule, unpublish, edit published items, insert an image into a body (drafts
+too), restore a revision, trash and untrash, link translations, and change or restore a
+menu. Each change names the version it was based on, is refused for protected items
+(WPMCP_PROTECTED_IDS here; the front, posts
 and privacy pages and their translations in the bridge), counts against a separate, lower
 hourly budget, and can be undone: revisions, the trash, saved menu versions. The bridge
 mails the site owner a digest of these changes.
@@ -20,7 +21,19 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..config import SCOPE_WRITE, Settings
 from ..wp.client import WordPressClient, WordPressError
 from . import Registry, ToolSpec
-from .write import Body, Categories, ContentId, Excerpt, LangCode, Seo, Slug, Title, _audit, _seo
+from .write import (
+    AllowShrink,
+    Body,
+    Categories,
+    ContentId,
+    Excerpt,
+    LangCode,
+    Seo,
+    Slug,
+    Title,
+    _audit,
+    content_fields,
+)
 
 Version = Annotated[
     str,
@@ -139,27 +152,73 @@ def register(
         parent_id: Annotated[int | None, Field(ge=0, description="0: no parent.")] = None,
         slug: Slug | None = None,
         seo: Seo | None = None,
+        allow_shrink: AllowShrink = False,
     ) -> dict:
         """Change a published (or scheduled, or private) post or page: visitors see the
-        change at once. Only the fields you give change; content replaces the whole body.
-        Changing the slug changes the URL. The state before is saved as a revision first and
-        returned in `before` (with the old categories, image, slug and SEO fields). Only with
-        the user's explicit go-ahead; for drafts use update_draft."""
+        change at once. Only the fields you give change; content replaces the whole body, so
+        have all of it first (a long body comes from get_content in parts); to add an image,
+        use insert_image instead. Changing the slug changes the URL. The state before is
+        saved as a revision first and returned in `before` (with the old categories, image,
+        slug and SEO fields). Only with the user's explicit go-ahead; for drafts use
+        update_draft."""
+        guard(content_id)
+        body = content_fields(
+            expected_version, title, content, excerpt, category_ids, featured_image_id,
+            parent_id, slug, seo, allow_shrink,
+        )  # fmt: skip
+        return await post(ctx, "update_published_content", f"/content/{content_id}/live", body)
+
+    async def insert_image(
+        ctx: Context,
+        content_id: ContentId,
+        expected_version: Version,
+        media_id: Annotated[int, Field(ge=1, description="Image ID (list_media, import_image).")],
+        position: Annotated[
+            Literal["start", "end", "after_text"],
+            Field(
+                description="Where the image goes: start or end of the body, or after_text: "
+                "after the paragraph, heading or other block that contains after_text."
+            ),
+        ] = "end",
+        after_text: Annotated[
+            str | None,
+            Field(
+                min_length=3,
+                max_length=200,
+                description="With position after_text: a few words copied from the one block "
+                "the image goes after (case and spacing do not matter).",
+            ),
+        ] = None,
+        alt_text: Annotated[
+            str | None,
+            Field(
+                max_length=500,
+                description="Alt text for this use only, in the item's language. Default: "
+                "the image's own alt text. The media library is not changed.",
+            ),
+        ] = None,
+        caption: Annotated[str | None, Field(max_length=500)] = None,
+        size: Literal["medium", "large", "full"] = "large",
+    ) -> dict:
+        """Add an image from the media library to the body of a post or page, without
+        rewriting the body: the rest stays exactly as it was. Use it instead of update_draft
+        or update_published_content to place an image, one call per item (each translation
+        has its own body; give alt_text in its language). On a draft nothing becomes visible.
+        On a published item visitors see it at once, so only with the user's explicit
+        go-ahead; the state before is saved as a revision (`before.revision_id`)."""
+        if (position == "after_text") != (after_text is not None):
+            raise ToolError("after_text goes with position after_text, and only with it.")
         guard(content_id)
         body = {
             "expected_version": expected_version,
-            "title": title,
-            "content": content,
-            "excerpt": excerpt,
-            "categories": category_ids,
-            "featured_media": featured_image_id,
-            "parent": parent_id,
-            "slug": slug,
-            "seo": _seo(seo),
+            "media_id": media_id,
+            "position": position,
+            "anchor_text": after_text,
+            "alt": alt_text,
+            "caption": caption,
+            "size": size,
         }
-        if all(value is None for key, value in body.items() if key != "expected_version"):
-            raise ToolError("Nothing to change: give at least one field.")
-        return await post(ctx, "update_published_content", f"/content/{content_id}/live", body)
+        return await post(ctx, "insert_image", f"/content/{content_id}/insert-image", body)
 
     async def restore_revision(
         ctx: Context,
@@ -240,6 +299,8 @@ def register(
         (schedule_content, "Schedule publication", False),
         (unpublish_content, "Unpublish", True),
         (update_published_content, "Edit published content", True),
+        # A draft or a published item: counted as live either way, refused when protected.
+        (insert_image, "Insert an image", True),
         (restore_revision, "Restore a revision", True),
         (trash_content, "Move to trash", True),
         (link_translations, "Link translations", True),

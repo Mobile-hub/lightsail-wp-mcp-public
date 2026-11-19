@@ -23,3 +23,8 @@ Stable decisions and their reasons live in `docs/architecture.md` and
 - **Edits name the version they were based on** (`version` from `get_content`).
 - **Write results omit the body** the caller just sent and add `notes` for anything that
   could not be carried over or that WordPress changed.
+- **Small fields first, the body last, long bodies in parts.** ChatGPT cuts long tool
+  results at a line boundary and the JSON body is one line, so anything after it is lost.
+  Keep `version`/`content_length` at the top of every content answer, keep parts under
+  `DEFAULT_PART`, and prefer tools that change a body without sending it (`insert_image`)
+  over "read all, rewrite all". The shrink check backs this up.

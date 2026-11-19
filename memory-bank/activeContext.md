@@ -1,8 +1,15 @@
 # Active context
 
-_Updated 2026-11-17._
+_Updated 2026-11-19._
 
 ## Current focus
+0.6.0 (bridge 0.6.0) fixes editing long posts and pages from ChatGPT, which cuts long
+tool results at a line boundary and so lost the body and the `version` after it:
+`get_content` answers the version first and a long body in parts, a much shorter body is
+refused without `allow_shrink`, and `insert_image` places an image without sending the
+body. Next: try `insert_image` and a long page edit from ChatGPT against production; if
+parts still get cut, lower `DEFAULT_PART` in `tools/read.py`.
+
 Release 0.5.0 (bridge 0.5.0) completes the editing features: live tools (publish,
 schedule, unpublish, live edits with the prior state kept as a revision, restore
 revision, trash/untrash, link translations) and menus (apply/restore with saved
@@ -15,7 +22,7 @@ Deployment is per platform with no detection: `PLATFORM` in the site file picks
 Debian packages/unattended upgrades/vhosts/certificates); `bin/bootstrap-site` is only for
 a fresh site's content.
 
-Since 0.5.0 (unreleased): `bin/migrate-site` (no code carried over; database and media
+Released with 0.6.0: `bin/migrate-site` (no code carried over; database and media
 only; credentials and sessions ended; certificates copied for testing before the DNS
 switch), `infra/mail` + `bin/mail-credentials` (SES via WP Mail SMTP's free SMTP mailer,
 constants outside the database), Apache hardening on Lightsail's own image. Rehearsed on

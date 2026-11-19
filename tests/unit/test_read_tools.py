@@ -130,6 +130,76 @@ def test_invalid_arguments_never_reach_wordpress(wp_app, wp_client, clock, fake,
     assert fake.requests == []
 
 
+def item_with_body(body: str) -> httpx.Response:
+    # The bridge's order before 0.6.0: the version last, after the body.
+    return httpx.Response(
+        200,
+        json={"id": 9, "status": "draft", "title": "T", "content": body, "seo": None,
+              "content_length": len(body), "version": "0123456789abcdef"},
+    )  # fmt: skip
+
+
+def raw_text(result) -> str:
+    assert not result.get("isError"), result
+    return result["content"][0]["text"]
+
+
+def test_get_content_puts_the_version_first_and_the_body_last(wp_app, wp_client, clock, fake):
+    fake.responses["/content/9"] = item_with_body("<p>short 🐻</p>")
+    token, _ = access_token(wp_app, clock, scope="wp:read")
+    result = call(wp_client, token, "get_content", {"content_id": 9})
+    data = payload(result)
+    assert list(data)[:2] == ["id", "version"] and list(data)[-1] == "content"
+    assert data["content"] == "<p>short 🐻</p>"
+    assert data["content_complete"] is True and data["next_offset"] is None
+    assert data["content_length"] == len("<p>short 🐻</p>")
+    assert "notes" not in data
+    # A client that keeps only the first lines of the answer still has the version.
+    text = raw_text(result)
+    assert text.index('"version"') < text.index('"content"')
+
+
+def test_get_content_returns_a_long_body_in_parts(wp_app, wp_client, clock, fake):
+    body = "".join(f"<!-- wp:paragraph -->\n<p>Párrafo {n} 🐻</p>\n<!-- /wp:paragraph -->\n\n"
+                   for n in range(700))  # fmt: skip
+    fake.responses["/content/9"] = item_with_body(body)
+    token, _ = access_token(wp_app, clock, scope="wp:read")
+    parts, offset = [], 0
+    while True:
+        data = payload(call(wp_client, token, "get_content", {"content_id": 9, "offset": offset}))
+        assert data["content_offset"] == offset and data["content_length"] == len(body)
+        assert len(data["content"]) <= 8_000
+        assert data["version"] == "0123456789abcdef"
+        parts.append(data["content"])
+        if data["content_complete"]:
+            assert data["next_offset"] is None
+            break
+        assert f"offset={data['next_offset']}" in data["notes"][-1]
+        offset = data["next_offset"]
+    assert len(parts) > 3 and "".join(parts) == body
+
+    small = payload(call(wp_client, token, "get_content", {"content_id": 9, "max_chars": 1000}))
+    assert small["next_offset"] == 1000 and small["content"] == body[:1000]
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [{"offset": 10_000}, {"max_chars": 999}, {"max_chars": 60_001}, {"offset": -1}],
+)
+def test_get_content_refuses_bad_parts(wp_app, wp_client, clock, fake, arguments):
+    fake.responses["/content/9"] = item_with_body("<p>x</p>")
+    token, _ = access_token(wp_app, clock, scope="wp:read")
+    result = call(wp_client, token, "get_content", {"content_id": 9, **arguments})
+    assert result["isError"] is True
+
+
+def test_get_content_passes_other_answers_through(wp_app, wp_client, clock, fake):
+    token, _ = access_token(wp_app, clock, scope="wp:read")
+    assert payload(call(wp_client, token, "get_content", {"content_id": 42}))["path"] == (
+        "/content/42"
+    )
+
+
 def test_wordpress_errors_become_tool_errors(wp_app, wp_client, clock, fake):
     fake.responses["/content/9"] = httpx.Response(
         404, json={"code": "wpmcp_not_found", "message": "No post or page with that ID."}

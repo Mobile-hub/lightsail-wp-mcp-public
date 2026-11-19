@@ -6,7 +6,23 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-19
+
+Long posts and pages could not be edited from ChatGPT: it cuts long tool results at a line
+boundary, the JSON body is one line, and `version` came after it, so both were lost and
+the client refused to save ("the connector does not return the version").
+
 ### Added
+- `insert_image`: puts an image from the media library into a post or page body (at the
+  start, at the end, or after the one block that contains a given text) without the body
+  travelling either way; the rest of the body is kept byte for byte. Alt text per use, in
+  the item's language. On a published item it is a live edit (revision first, `before`,
+  digest, protected pages refused); it counts against the live budget for drafts too.
+- `get_content` returns a long body in parts (`offset`, `max_chars`, 8,000 characters by
+  default) with `content_length`, `content_offset`, `content_complete` and `next_offset`.
+- `update_draft` and `update_published_content` refuse a body less than half as long as
+  the current one (of 1,000 characters or more) unless `allow_shrink` is true: the usual
+  sign of a body read or kept only in part.
 - `bin/migrate-site`: moves a site to a new server prepared with `bin/setup-server`,
   copying only the database and the media library (no code: core, plugins and themes come
   again from wordpress.org at the same versions), ending every Application Password and
@@ -19,9 +35,14 @@ All notable changes are listed here. The format follows
   account to ChatGPT and Claude connected and mail through SES.
 - On Lightsail's own image, `bin/setup-server` denies `xmlrpc.php` and version files,
   stops PHP from running in uploads, and sets `ServerTokens Prod`.
-
 - On Lightsail's own image, `bin/setup-server` removes world write access under the web
   root (the image leaves five directories 777) and group write access to `/var/www`.
+
+### Changed
+- `get_content` and every write result answer `id`, `version`, `being_edited` and
+  `content_length` first and the body last. Bridge 0.6.0, needed by the server (new route
+  `/content/{id}/insert-image`, `allow_shrink`).
+- The server instructions describe the parts of a long body and `insert_image`.
 
 ### Fixed
 - `bin/inventory`'s fallback to `DEPLOY_*` no longer applies to other prefixes.

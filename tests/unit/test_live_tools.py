@@ -17,6 +17,7 @@ LIVE_TOOLS = {
     "schedule_content",
     "unpublish_content",
     "update_published_content",
+    "insert_image",
     "restore_revision",
     "trash_content",
     "link_translations",
@@ -83,6 +84,21 @@ def test_read_only_connection_cannot_publish(live_app, live_client, clock, fake)
         ("update_published_content",
          {"content_id": 8, "expected_version": V, "title": "Novo", "seo": {"title": None}},
          "/content/8/live", {"expected_version": V, "title": "Novo", "seo": {"title": None}}),
+        ("update_published_content",
+         {"content_id": 8, "expected_version": V, "content": "<p>x</p>", "allow_shrink": True},
+         "/content/8/live", {"expected_version": V, "content": "<p>x</p>", "allow_shrink": True}),
+        ("update_published_content",
+         {"content_id": 8, "expected_version": V, "title": "T", "allow_shrink": True},
+         "/content/8/live", {"expected_version": V, "title": "T"}),
+        ("insert_image", {"content_id": 8, "expected_version": V, "media_id": 77},
+         "/content/8/insert-image",
+         {"expected_version": V, "media_id": 77, "position": "end", "size": "large"}),
+        ("insert_image",
+         {"content_id": 8, "expected_version": V, "media_id": 77, "position": "after_text",
+          "after_text": "Quantum chips", "alt_text": "Um chip", "caption": "Foto", "size": "full"},
+         "/content/8/insert-image",
+         {"expected_version": V, "media_id": 77, "position": "after_text",
+          "anchor_text": "Quantum chips", "alt": "Um chip", "caption": "Foto", "size": "full"}),
         ("link_translations", {"translations": {"en": 3, "es": 4}}, "/translations",
          {"items": {"en": 3, "es": 4}}),
         ("restore_menu", {"menu_id": 5}, "/menus/5/restore", {}),
@@ -145,6 +161,19 @@ def test_apply_menu_sends_typed_items(live_app, live_client, clock, fake):
         ("apply_menu", {"menu_id": 5, "expected_version": V,
                         "items": [{"kind": "page", "id": 2, "classes": "x"}]}),
         ("trash_content", {"content_id": 8, "expected_version": V, "force": True}),
+        ("update_published_content",
+         {"content_id": 8, "expected_version": V, "allow_shrink": True}),
+        ("insert_image", {"content_id": 8, "expected_version": V}),
+        ("insert_image", {"content_id": 8, "expected_version": V, "media_id": 7,
+                          "position": "after_text"}),
+        ("insert_image", {"content_id": 8, "expected_version": V, "media_id": 7,
+                          "after_text": "only with after_text"}),
+        ("insert_image", {"content_id": 8, "expected_version": V, "media_id": 7,
+                          "position": "middle"}),
+        ("insert_image", {"content_id": 8, "expected_version": V, "media_id": 7,
+                          "size": "thumbnail"}),
+        ("insert_image", {"content_id": 8, "expected_version": V, "media_id": 7,
+                          "html": "<img src=x onerror=alert(1)>"}),
     ],
 )  # fmt: skip
 def test_invalid_live_calls_never_reach_wordpress(
@@ -164,6 +193,7 @@ def test_invalid_live_calls_never_reach_wordpress(
         ("update_published_content", {"content_id": 42, "expected_version": V, "title": "x"}),
         ("restore_revision", {"content_id": 42, "expected_version": V, "revision_id": 1}),
         ("link_translations", {"translations": {"en": 42, "es": 4}}),
+        ("insert_image", {"content_id": 42, "expected_version": V, "media_id": 7}),
     ],
 )
 def test_protected_items_are_refused_before_wordpress(
@@ -189,6 +219,18 @@ def test_live_budget_is_separate_and_lower(store, clock, fake):
             "isError"
         )
         assert not call(client, token, "restore_from_trash", {"content_id": 8}).get("isError")
+
+
+def test_insert_image_counts_as_a_live_change(store, clock, fake):
+    # The bridge decides whether the item is published; the budget is charged either way.
+    app = build(store, clock, fake, live_budget=1)
+    with TestClient(app, base_url=BASE) as client:
+        token, _ = access_token(app, clock)
+        image = {"content_id": 8, "expected_version": V, "media_id": 7}
+        assert not call(client, token, "insert_image", image).get("isError")
+        refused = call(client, token, "insert_image", image)
+        assert refused["isError"] is True and "live changes" in refused["content"][0]["text"]
+    assert len(fake.requests) == 1
 
 
 def test_live_budget_zero_turns_live_changes_off(store, clock, fake):

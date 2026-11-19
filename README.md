@@ -36,8 +36,8 @@ model, and expect to adapt the deployment to your server.
 
 Read tools (`wp:read`): `get_connection_info`, `get_site_overview`, `search_content` (by
 language, status, category, missing translations), `get_content` (body, SEO, site-specific
-extra fields, `version`), `list_terms`, `list_media`, `list_revisions`, `get_menus`,
-`get_recent_changes`.
+extra fields, `version`; a long body in parts), `list_terms`, `list_media`,
+`list_revisions`, `get_menus`, `get_recent_changes`.
 
 Draft tools (`wp:write`), none of which changes what visitors see: `create_draft` (in one
 language, optionally linked as a translation, with categories, featured image and SEO),
@@ -47,7 +47,8 @@ upload link, any client), `update_media` (title, alt text, caption).
 
 Live tools (`wp:write`), which change what visitors see, each against the `version` read
 and undoable: `publish_content`, `schedule_content`, `unpublish_content`,
-`update_published_content` (the state before is kept as a revision), `restore_revision`,
+`update_published_content` (the state before is kept as a revision), `insert_image` (an
+image into a body without rewriting it; drafts too), `restore_revision`,
 `trash_content` and `restore_from_trash` (never a permanent delete), `link_translations`,
 `apply_menu` and `restore_menu` (menus shown by a theme location; the last 5 versions are
 kept). They have their own hourly budget, protected pages, and an hourly digest e-mail to

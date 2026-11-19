@@ -167,6 +167,23 @@ def test_update_draft_sends_only_what_changes(wp_app, wp_client, clock, fake):
     }
 
 
+def test_update_draft_sends_allow_shrink_only_with_content(wp_app, wp_client, clock, fake):
+    token, _ = access_token(wp_app, clock)
+    version = "0123456789abcdef"
+    base = {"content_id": 8, "expected_version": version}
+    call(wp_client, token, "update_draft", {**base, "content": "<p>x</p>", "allow_shrink": True})
+    assert fake.json_body() == {
+        "expected_version": version,
+        "content": "<p>x</p>",
+        "allow_shrink": True,
+    }
+    call(wp_client, token, "update_draft", {**base, "content": "<p>x</p>"})
+    assert "allow_shrink" not in fake.json_body()
+    refused = call(wp_client, token, "update_draft", {**base, "allow_shrink": True})
+    assert refused["isError"] is True and "Nothing to change" in str(refused)
+    assert len(fake.requests) == 2
+
+
 @pytest.mark.parametrize(
     ("name", "arguments"),
     [

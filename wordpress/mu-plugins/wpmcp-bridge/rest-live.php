@@ -51,7 +51,10 @@ function wpmcp_register_live_routes(): void {
 	$item(
 		'live',
 		'wpmcp_rest_live_update',
-		array( 'expected_version' => $version ) + wpmcp_content_field_args()
+		array(
+			'expected_version' => $version,
+			'allow_shrink'     => array( 'type' => 'boolean' ),
+		) + wpmcp_content_field_args()
 	);
 	$item(
 		'restore-revision',

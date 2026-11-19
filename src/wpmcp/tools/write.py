@@ -51,6 +51,14 @@ Categories = Annotated[
     ),
 ]
 MediaText = Annotated[str, Field(max_length=500)]
+AllowShrink = Annotated[
+    bool,
+    Field(
+        description="Only when the user wants most of the body removed: without it, a "
+        "content less than half as long as the current one is refused (the usual sign of a "
+        "body read or kept only in part)."
+    ),
+]
 
 
 class Seo(BaseModel):
@@ -157,23 +165,17 @@ def register(
         parent_id: Annotated[int | None, Field(ge=0, description="0: no parent.")] = None,
         slug: Slug | None = None,
         seo: Seo | None = None,
+        allow_shrink: AllowShrink = False,
     ) -> dict:
         """Change a draft or pending post or page. Only the fields you give change; content
-        replaces the whole body. Published items cannot be changed with this tool. Refused
-        if someone has the item open in the editor or it changed since you read it."""
-        body = {
-            "expected_version": expected_version,
-            "title": title,
-            "content": content,
-            "excerpt": excerpt,
-            "categories": category_ids,
-            "featured_media": featured_image_id,
-            "parent": parent_id,
-            "slug": slug,
-            "seo": _seo(seo),
-        }
-        if all(value is None for key, value in body.items() if key != "expected_version"):
-            raise ToolError("Nothing to change: give at least one field.")
+        replaces the whole body, so have all of it first (a long body comes from get_content
+        in parts). To add an image to the body, use insert_image instead. Published items
+        cannot be changed with this tool. Refused if someone has the item open in the editor
+        or it changed since you read it."""
+        body = content_fields(
+            expected_version, title, content, excerpt, category_ids, featured_image_id,
+            parent_id, slug, seo, allow_shrink,
+        )  # fmt: skip
         return await write(ctx, "update_draft", f"/content/{content_id}", body)
 
     async def create_category(
@@ -282,6 +284,36 @@ def register(
     registry.add(
         ToolSpec(update_media, title="Edit image details", scope=SCOPE_WRITE, destructive=True)
     )
+
+
+def content_fields(
+    expected_version: str,
+    title: str | None,
+    content: str | None,
+    excerpt: str | None,
+    category_ids: list[int] | None,
+    featured_image_id: int | None,
+    parent_id: int | None,
+    slug: str | None,
+    seo: Seo | None,
+    allow_shrink: bool,
+) -> dict[str, Any]:
+    """The bridge body of update_draft and update_published_content."""
+    body = {
+        "title": title,
+        "content": content,
+        "excerpt": excerpt,
+        "categories": category_ids,
+        "featured_media": featured_image_id,
+        "parent": parent_id,
+        "slug": slug,
+        "seo": _seo(seo),
+    }
+    if all(value is None for value in body.values()):
+        raise ToolError("Nothing to change: give at least one field.")
+    # Sent only when set: the bridge refuses a much shorter body without it.
+    shrink = {"allow_shrink": True} if allow_shrink and content is not None else {}
+    return {"expected_version": expected_version, **body, **shrink}
 
 
 def _seo(seo: Seo | None) -> dict | None:

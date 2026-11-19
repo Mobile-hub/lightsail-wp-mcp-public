@@ -19,6 +19,7 @@
 defined( 'ABSPATH' ) || exit;
 
 const WPMCP_BRIDGE_EDITABLE    = array( 'draft', 'pending' );
+const WPMCP_BRIDGE_SHRINK_MIN  = 1000;
 const WPMCP_BRIDGE_IMAGE_MIMES = array(
 	'jpg|jpeg|jpe' => 'image/jpeg',
 	'png'          => 'image/png',
@@ -87,8 +88,28 @@ function wpmcp_register_write_routes(): void {
 			'callback'            => 'wpmcp_rest_content_update',
 			'permission_callback' => 'wpmcp_can_edit_item',
 			'args'                => $fields + array(
-				'id'                    => $id,
+				'id'               => $id,
 				'expected_version' => array( 'type' => 'string', 'pattern' => '^[0-9a-f]{16}$', 'required' => true ),
+				'allow_shrink'     => array( 'type' => 'boolean' ),
+			),
+		)
+	);
+	register_rest_route(
+		WPMCP_BRIDGE_NS,
+		'/content/(?P<id>\d+)/insert-image',
+		array(
+			'methods'             => 'POST',
+			'callback'            => 'wpmcp_rest_insert_image',
+			'permission_callback' => 'wpmcp_can_edit_item',
+			'args'                => array(
+				'id'               => $id,
+				'expected_version' => array( 'type' => 'string', 'pattern' => '^[0-9a-f]{16}$', 'required' => true ),
+				'media_id'         => $id,
+				'position'         => array( 'type' => 'string', 'enum' => array( 'start', 'end', 'after_text' ), 'required' => true ),
+				'anchor_text'      => $text( 200 ),
+				'alt'              => $text( 500 ),
+				'caption'          => $text( 500 ),
+				'size'             => array( 'type' => 'string', 'enum' => array( 'medium', 'large', 'full' ), 'default' => 'large' ),
 			),
 		)
 	);
@@ -271,6 +292,24 @@ function wpmcp_default_author( string $type, ?WP_Post $source ): int {
 	return $latest ? (int) $latest[0]->post_author : get_current_user_id();
 }
 
+/**
+ * Refuses a body less than half as long as the current one (of at least 1000 characters):
+ * the usual sign of a client that read only part of a long body, or lost part of it, and
+ * would replace the whole body with what it has. allow_shrink says the cut is intended.
+ */
+function wpmcp_check_shrink( WP_Post $post, string $content ): ?WP_Error {
+	$current = mb_strlen( wpmcp_decode_emoji( $post->post_content ) );
+	$new     = mb_strlen( wpmcp_decode_emoji( $content ) );
+	if ( $current < WPMCP_BRIDGE_SHRINK_MIN || $new * 2 >= $current ) {
+		return null;
+	}
+	return wpmcp_error(
+		'wpmcp_shrink',
+		"The new content has $new characters, less than half of the current $current. Content replaces the whole body: if get_content returned it in parts (content_complete false), read every part and join them first. To add an image, use insert_image. Pass allow_shrink=true only if the user wants that much removed.",
+		409
+	);
+}
+
 /** True when WordPress stored something other than what was sent (kses, normalisation). */
 function wpmcp_content_filtered( string $sent, string $stored ): bool {
 	$normalise = static fn ( string $html ) => trim( str_replace( "\r\n", "\n", wp_encode_emoji( $html ) ) );
@@ -320,8 +359,7 @@ function wpmcp_write_result( int $id, array $notes = array(), ?string $sent_cont
 	clean_post_cache( $id );
 	$post   = get_post( $id );
 	$detail = wpmcp_content_detail( $post );
-	// The caller has the body it sent; return its size, not the body again.
-	$detail['content_length'] = mb_strlen( $post->post_content );
+	// The caller has the body it sent; content_length says its size, without the body again.
 	unset( $detail['content'] );
 	if ( null !== $sent_content && wpmcp_content_filtered( $sent_content, $post->post_content ) ) {
 		$notes[] = 'WordPress changed the content while saving (markup this account may not use is removed). Read it with get_content to see what was kept.';
@@ -505,6 +543,12 @@ function wpmcp_apply_content_update( WP_Post $post, WP_REST_Request $request, ar
 			$postarr[ $column ] = (string) $request[ $param ];
 		}
 	}
+	if ( isset( $postarr['post_content'] ) && ! $request['allow_shrink'] ) {
+		$check = wpmcp_check_shrink( $post, $postarr['post_content'] );
+		if ( $check ) {
+			return $check;
+		}
+	}
 	if ( $request->has_param( 'parent' ) ) {
 		$parent = (int) $request['parent'];
 		if ( $parent ) {
@@ -550,6 +594,130 @@ function wpmcp_apply_content_update( WP_Post $post, WP_REST_Request $request, ar
 		$notes[] = $seo_error->get_error_message();
 	}
 	return wpmcp_write_result( $post->ID, $notes, $postarr['post_content'] ?? null );
+}
+
+// ------------------------------------------------------------------ images in content
+
+/**
+ * Inserts an image block into a post or page without the caller sending the body: at the
+ * start, at the end, or after the one top-level block whose text contains anchor_text.
+ * The rest of the body is kept byte for byte. On a published (or scheduled, or private)
+ * item this is a live edit: protected items are refused, the state before is saved as a
+ * revision and returned in `before`, and the change goes into the owner's digest.
+ */
+function wpmcp_rest_insert_image( WP_REST_Request $request ) {
+	$post  = get_post( (int) $request['id'] );
+	$live  = in_array( $post->post_status, WPMCP_BRIDGE_LIVE, true );
+	$check = wpmcp_check_status( $post, array_merge( WPMCP_BRIDGE_EDITABLE, WPMCP_BRIDGE_LIVE ), 'restore it from the trash first' )
+		?? ( $live ? wpmcp_check_protected( $post ) : null )
+		?? wpmcp_edit_guard( $post, $request )
+		?? wpmcp_check_image( (int) $request['media_id'] );
+	if ( $check ) {
+		return $check;
+	}
+
+	$media_id = (int) $request['media_id'];
+	$alt      = $request->has_param( 'alt' ) ? (string) $request['alt'] : (string) get_post_meta( $media_id, '_wp_attachment_image_alt', true );
+	$block    = wpmcp_image_block( $media_id, (string) $request['size'], $alt, (string) $request['caption'] );
+	if ( null === $block ) {
+		return wpmcp_error( 'wpmcp_bad_image', "Image $media_id has no file to show." );
+	}
+	$content = wpmcp_insert_block( $post->post_content, $block, (string) $request['position'], trim( (string) $request['anchor_text'] ) );
+	if ( is_wp_error( $content ) ) {
+		return $content;
+	}
+
+	$revision = $live ? wpmcp_keep_revision( $post ) : null;
+	$result   = wp_update_post( wp_slash( array( 'ID' => $post->ID, 'post_content' => $content ) ), true );
+	if ( is_wp_error( $result ) ) {
+		return wpmcp_error( 'wpmcp_update_failed', $result->get_error_message(), 500 );
+	}
+	$notes = array();
+	if ( '' === $alt ) {
+		$notes[] = "The image has no alt text: give alt_text, or set it with update_media.";
+	}
+	if ( $live ) {
+		wpmcp_live_record( 'inserted image', $post->ID );
+		$notes[] = 'Published item: visitors see the image now. restore_revision with before.revision_id undoes it.';
+	}
+	$detail = wpmcp_write_result( $post->ID, $notes, $content );
+	if ( $live ) {
+		$detail['before'] = array( 'revision_id' => $revision );
+	}
+	return $detail;
+}
+
+/** Block markup of a core/image block, as the block editor saves it; null without a file. */
+function wpmcp_image_block( int $id, string $size, string $alt, string $caption ): ?string {
+	$src = wp_get_attachment_image_url( $id, $size );
+	if ( ! $src ) {
+		return null;
+	}
+	// Links and emphasis only; scripts and styles go with their contents, as in wp_strip_all_tags.
+	$caption = preg_replace( '@<(script|style)[^>]*?>.*?</\\1>@si', '', $caption );
+	$caption = trim( wp_kses( $caption, array( 'a' => array( 'href' => true ), 'em' => array(), 'strong' => array() ) ) );
+	$html    = sprintf(
+		'<figure class="wp-block-image size-%1$s"><img src="%2$s" alt="%3$s" class="wp-image-%4$d"/>%5$s</figure>',
+		esc_attr( $size ),
+		esc_url( $src ),
+		esc_attr( $alt ),
+		$id,
+		'' === $caption ? '' : '<figcaption class="wp-element-caption">' . $caption . '</figcaption>'
+	);
+	return get_comment_delimited_block_content(
+		'core/image',
+		array(
+			'id'              => $id,
+			'sizeSlug'        => $size,
+			'linkDestination' => 'none',
+		),
+		$html
+	);
+}
+
+/**
+ * $content with $block inserted. after_text needs block markup, and finds the one
+ * top-level block whose text contains $anchor (case and spacing ignored). The text before
+ * the insertion point must serialise back exactly, or the change is refused rather than
+ * rewriting markup the caller did not ask to touch.
+ */
+function wpmcp_insert_block( string $content, string $block, string $position, string $anchor ) {
+	if ( 'start' === $position ) {
+		return '' === trim( $content ) ? $block : $block . "\n\n" . $content;
+	}
+	if ( 'end' === $position ) {
+		return '' === trim( $content ) ? $block : rtrim( $content ) . "\n\n" . $block;
+	}
+	if ( '' === $anchor ) {
+		return wpmcp_error( 'wpmcp_no_anchor', 'position after_text needs after_text: a few words of the paragraph or heading the image goes after.' );
+	}
+	if ( ! has_blocks( $content ) ) {
+		return wpmcp_error( 'wpmcp_classic', 'This item is classic HTML, not blocks: after_text cannot find a block in it. Use position start or end.' );
+	}
+	$normalise = static fn ( string $text ) => mb_strtolower( trim( preg_replace( '/\s+/u', ' ', $text ) ) );
+	$needle    = $normalise( $anchor );
+	$blocks    = parse_blocks( $content );
+	$matches   = array();
+	foreach ( $blocks as $index => $parsed ) {
+		if ( null === $parsed['blockName'] ) {
+			continue;
+		}
+		$text = $normalise( html_entity_decode( wp_strip_all_tags( wpmcp_decode_emoji( serialize_block( $parsed ) ) ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
+		if ( '' !== $text && false !== mb_strpos( $text, $needle ) ) {
+			$matches[] = $index;
+		}
+	}
+	if ( ! $matches ) {
+		return wpmcp_error( 'wpmcp_anchor_not_found', 'No block contains that text. Copy a few words exactly as they appear in get_content, or use position start or end.' );
+	}
+	if ( count( $matches ) > 1 ) {
+		return wpmcp_error( 'wpmcp_anchor_ambiguous', count( $matches ) . ' blocks contain that text: give longer after_text, from one block only.' );
+	}
+	$prefix = serialize_blocks( array_slice( $blocks, 0, $matches[0] + 1 ) );
+	if ( ! str_starts_with( $content, $prefix ) ) {
+		return wpmcp_error( 'wpmcp_markup_changed', 'The markup before that point would not be kept exactly, so nothing was changed. Use position start or end, or update_draft.' );
+	}
+	return rtrim( $prefix ) . "\n\n" . $block . "\n\n" . ltrim( substr( $content, strlen( $prefix ) ) );
 }
 
 // ------------------------------------------------------------------------ categories

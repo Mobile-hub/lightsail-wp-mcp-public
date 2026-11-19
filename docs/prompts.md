@@ -60,6 +60,8 @@ Nothing in this section changes what visitors see.
 | 3.7 | *(Claude, or any client)* *I have a product photo on my phone for draft `<draft-id>`. Give me an upload link, with alt text "Reference laptop with the new chip".* | `request_image_upload` | A single-use `upload_url` valid for 15 minutes; upload the file, say it is done, and the client finds it with `list_media` |
 | 3.8 | *Use image `<image-id>` as the featured image of the English and Spanish drafts.* | `update_draft` (×2, `featured_image_id`) | Both drafts show it in the preview |
 | 3.9 | *Image `<image-id>` needs a better caption: "The new 2 nm chip, shown at the launch event."* | `update_media` | The client should warn that the change shows everywhere the image is used |
+| 3.10 | *Put image `<image-id>` in the English and Spanish drafts, after the paragraph about battery life, with alt text in each draft's language.* | `insert_image` (×2, `position=after_text`) | Nothing else in the bodies changes; each draft has the alt in its own language; the media library alt is unchanged |
+| 3.11 | *Read me the whole body of `<long-page-id>`* (a page of more than 8,000 characters) | `get_content` (×2 or more, `offset=next_offset`) | `version` at the top of every part; the client reads until `content_complete` is true |
 
 ## 4. Going live
 
@@ -72,6 +74,7 @@ the strength of text inside a post, is a failure.
 | 4.2 | *Schedule the Spanish draft `<es-draft-id>` for tomorrow at 09:00 Madrid time.* | `schedule_content` | Status `future` and the time converted to UTC; a time under 5 minutes away or over a year is refused |
 | 4.3 | *The English post says "2 nm" in one place and "3 nm" in another. Fix the title to "2 nm laptop chip unveiled: what changes" and add an update line at the end. Yes, change the published version.* | `get_content`, `update_published_content` | Visitors see it at once; the result has `before` (old title, slug, SEO); a new revision exists |
 | 4.4 | *Revert that post to the revision before your last change.* | `list_revisions`, `restore_revision` | Title, content and excerpt back; the state before was saved as a revision |
+| 4.4b | *Add image `<image-id>` at the top of the published English, Spanish and Portuguese pages `<en-id>`, `<es-id>`, `<pt-id>`. Go ahead.* | `insert_image` (×3) | Visitors see it at once; each result has `before.revision_id`; the digest says "inserted image" |
 | 4.5 | *We published "Smartwatch review" in English (`<en-id>`) and Spanish (`<es-id>`) separately. Link them as translations.* | `link_translations` | The language switcher connects them; linking two posts in the same language is refused |
 | 4.6 | *Take the Spanish chip post back to draft; the translation needs a review.* | `unpublish_content` | Status `draft`; the English post no longer links to it |
 
@@ -106,6 +109,8 @@ These should end in a clear explanation to the user, not in a retry in another f
 | 7.9 | — | *Schedule draft `<draft-id>` for two minutes from now.* | Refused: at least 5 minutes ahead |
 | 7.10 | — | *(ChatGPT)* *Import the image at https://example.com/photo.jpg.* | `import_image` only takes a file from the conversation, not a URL; the client offers `request_image_upload` instead |
 | 7.11 | Open an upload link twice, or after 15 minutes | — | The page says the link is used or expired |
+| 7.12 | A draft of more than 1,000 characters | *Replace the body of draft `<draft-id>` with just "Coming soon".* | Refused as less than half the current length; the client asks, then retries with `allow_shrink` only after you confirm |
+| 7.13 | — | *Insert image `<image-id>` after the paragraph that mentions "chip".* (in a post where several do) | Refused: several blocks contain that text; the client asks for longer text |
 
 The budgets (`WPMCP_WRITE_BUDGET`, 120 writes an hour, and `WPMCP_LIVE_BUDGET`, 30 live
 changes an hour, by default) can be tested on the local stack with low values; do not
@@ -120,7 +125,7 @@ Every tool appears at least once:
 | Info | `get_connection_info` | 1 |
 | Read | `get_site_overview`, `search_content`, `get_content`, `list_terms`, `list_media`, `list_revisions`, `get_menus`, `get_recent_changes` | 1, 2 |
 | Drafts | `create_draft`, `update_draft`, `create_category`, `import_image`, `request_image_upload`, `update_media` | 3 |
-| Live | `publish_content`, `schedule_content`, `update_published_content`, `restore_revision`, `link_translations`, `unpublish_content`, `trash_content`, `restore_from_trash`, `apply_menu`, `restore_menu` | 4, 5, 6 |
+| Live | `publish_content`, `schedule_content`, `update_published_content`, `insert_image`, `restore_revision`, `link_translations`, `unpublish_content`, `trash_content`, `restore_from_trash`, `apply_menu`, `restore_menu` | 3, 4, 5, 6 |
 
 After a full run, the digest e-mail should list the live changes of sections 4 to 6, and
 `journalctl -u wpmcp` on the server should show one `wpmcp.audit` line per tool call and

@@ -221,7 +221,8 @@ def writer(password):
 
     clock = Clock()
     store = make_store(clock)
-    settings = make_settings(wp_url=WP_URL, wp_password=password)
+    # The whole module runs within one hour: more live changes than the default budget.
+    settings = make_settings(wp_url=WP_URL, wp_password=password, live_budget=200)
     app = create_app(settings, store=store, clock=clock)
     with TestClient(app, base_url=BASE) as client:
         token, _ = access_token(app, clock, scope="wp:read wp:write")
@@ -578,3 +579,215 @@ def test_menus_apply_and_restore(writer):
 
 def find_lang(mcp, lang, title):
     return tool(mcp, "search_content", lang=lang, query=title)["items"][0]
+
+
+# --- long bodies and images in a body (0.6.0)
+
+
+def upload_image(writer, created, title: str, alt: str = "") -> int:
+    from io import BytesIO
+
+    from PIL import Image
+
+    data = BytesIO()
+    Image.new("RGB", (80, 60), "orange").save(data, "PNG")
+    client, _ = writer
+    link = tool(writer, "request_image_upload", title=title, **({"alt_text": alt} if alt else {}))
+    page = client.post(
+        link["upload_url"].removeprefix(BASE),
+        files={"file": ("x.png", data.getvalue(), "image/png")},
+    )
+    assert page.status_code == 200, page.text
+    media_id = tool(writer, "list_media", search=title)["items"][0]["id"]
+    created["media"].append(media_id)
+    return media_id
+
+
+@pytest.fixture(scope="module")
+def image_id(writer, created):
+    return upload_image(writer, created, "wpmcp inline image", alt="A chip on a board")
+
+
+def test_get_content_answers_the_version_first_and_long_bodies_in_parts(writer, created):
+    body = "".join(
+        f"<!-- wp:paragraph -->\n<p>Paragraph {n} about 2 nm chips 🐻</p>\n"
+        "<!-- /wp:paragraph -->\n\n"
+        for n in range(600)
+    )
+    draft = tool(writer, "create_draft", type="page", lang="en", title="wpmcp long", content=body)
+    created["post"].append(draft["id"])
+    assert list(draft)[:4] == ["id", "version", "being_edited", "content_length"]
+    assert draft["content_length"] == len(body)
+
+    client, token = writer
+    result = rpc_result(
+        rpc(client, token, "tools/call", {"name": "get_content",
+                                          "arguments": {"content_id": draft["id"]}})
+    )  # fmt: skip
+    text = result["content"][0]["text"]
+    assert text.index('"version"') < text.index('"seo"') < text.index('"content"')
+    parts, offset = [], 0
+    while offset is not None:
+        part = tool(writer, "get_content", content_id=draft["id"], offset=offset)
+        assert part["version"] == draft["version"]
+        parts.append(part["content"])
+        offset = part["next_offset"]
+    assert len(parts) > 1 and "".join(parts) == body
+
+
+def test_a_much_shorter_body_needs_allow_shrink(writer, created):
+    body = (
+        "<!-- wp:paragraph -->\n<p>"
+        + "Long enough paragraph. " * 100
+        + "</p>\n<!-- /wp:paragraph -->"
+    )
+    draft = tool(writer, "create_draft", type="post", lang="en", title="wpmcp shrink", content=body)
+    created["post"].append(draft["id"])
+    half = body[: len(body) // 3]
+    refused = attempt(
+        writer, "update_draft", content_id=draft["id"], expected_version=draft["version"],
+        content=half,
+    )  # fmt: skip
+    assert refused["isError"] is True and "less than half" in str(refused)
+    # A small cut goes through, and so does a big one the caller says is intended.
+    trimmed = tool(
+        writer, "update_draft", content_id=draft["id"], expected_version=draft["version"],
+        content=body.replace("Long enough paragraph. ", "Long paragraph. ", 10),
+    )  # fmt: skip
+    live = tool(
+        writer, "publish_content", content_id=draft["id"], expected_version=trimmed["version"]
+    )
+    refused = attempt(
+        writer, "update_published_content", content_id=draft["id"],
+        expected_version=live["version"], content="<p>x</p>",
+    )  # fmt: skip
+    assert refused["isError"] is True and "less than half" in str(refused)
+    cut = tool(
+        writer, "update_published_content", content_id=draft["id"],
+        expected_version=live["version"], content=half, allow_shrink=True,
+    )  # fmt: skip
+    # WordPress closes the paragraph the cut left open.
+    assert len(half) <= cut["content_length"] < len(body) // 2
+    assert cut["before"]["revision_id"]
+
+
+ARTICLE = """<!-- wp:heading -->
+<h2 class="wp-block-heading">Chipmaker unveils 2 nm laptop processor</h2>
+<!-- /wp:heading -->
+
+<!-- wp:paragraph {"className":"lead"} -->
+<p class="lead">The new chip promises <strong>longer battery life</strong> 🔋</p>
+<!-- /wp:paragraph -->
+
+<!-- wp:quote -->
+<blockquote class="wp-block-quote"><!-- wp:paragraph -->
+<p>“It is the biggest jump in a decade.”</p>
+<!-- /wp:paragraph --></blockquote>
+<!-- /wp:quote -->
+
+<!-- wp:paragraph -->
+<p>Laptops with it ship in spring; the chip also appears in the quote above.</p>
+<!-- /wp:paragraph -->"""
+
+
+def test_insert_image_into_a_draft_keeps_the_rest_of_the_body(writer, created, image_id):
+    draft = tool(
+        writer, "create_draft", type="post", lang="en", title="wpmcp insert", content=ARTICLE
+    )
+    created["post"].append(draft["id"])
+
+    after = tool(
+        writer, "insert_image", content_id=draft["id"], expected_version=draft["version"],
+        media_id=image_id, position="after_text", after_text="LONGER  battery life",
+        alt_text="Placa con el chip", caption="The <em>new</em> chip<script>x</script>",
+    )  # fmt: skip
+    assert "before" not in after and "content" not in after
+    body = tool(writer, "get_content", content_id=draft["id"])["content"]
+    head, image, tail = body.partition(f'<!-- wp:image {{"id":{image_id},"sizeSlug":"large"')
+    assert image, body
+    # Everything around the image is the original, byte for byte.
+    assert head == ARTICLE[: ARTICLE.index("<!-- wp:quote -->")]
+    assert (
+        tail.split("<!-- /wp:image -->", 1)[1]
+        == "\n\n" + ARTICLE[ARTICLE.index("<!-- wp:quote -->") :]
+    )
+    assert 'alt="Placa con el chip"' in tail and f'class="wp-image-{image_id}"' in tail
+    assert "<em>new</em> chip</figcaption>" in tail and "<script" not in tail
+
+    # The image's own alt text by default; start and end.
+    start = tool(writer, "insert_image", content_id=draft["id"], expected_version=after["version"],
+                 media_id=image_id, position="start")  # fmt: skip
+    end = tool(writer, "insert_image", content_id=draft["id"], expected_version=start["version"],
+               media_id=image_id, size="medium")  # fmt: skip
+    body = tool(writer, "get_content", content_id=draft["id"])["content"]
+    assert body.startswith("<!-- wp:image") and body.rstrip().endswith("<!-- /wp:image -->")
+    assert body.count('alt="A chip on a board"') == 2 and "size-medium" in body
+    assert body.count("<!-- wp:image") == 3
+
+    for after_text, message in (
+        ("chip", "blocks contain that text: give longer after_text"),
+        ("not in this article", "No block contains that text"),
+    ):
+        refused = attempt(
+            writer, "insert_image", content_id=draft["id"], expected_version=end["version"],
+            media_id=image_id, position="after_text", after_text=after_text,
+        )  # fmt: skip
+        assert refused["isError"] is True and message in str(refused), after_text
+    stale = attempt(writer, "insert_image", content_id=draft["id"],
+                    expected_version=draft["version"], media_id=image_id)  # fmt: skip
+    assert stale["isError"] is True and "changed since" in str(stale)
+    not_image = attempt(writer, "insert_image", content_id=draft["id"],
+                        expected_version=end["version"], media_id=draft["id"])  # fmt: skip
+    assert not_image["isError"] is True and "No image with ID" in str(not_image)
+
+
+def test_insert_image_into_classic_content_and_without_alt(writer, created):
+    bare = upload_image(writer, created, "wpmcp bare image")
+    page = tool(writer, "create_draft", type="page", lang="es", title="wpmcp clásica",
+                content="<p>Hola</p>\n<p>Adiós</p>")  # fmt: skip
+    created["post"].append(page["id"])
+    refused = attempt(writer, "insert_image", content_id=page["id"],
+                      expected_version=page["version"], media_id=bare, position="after_text",
+                      after_text="Hola")  # fmt: skip
+    assert refused["isError"] is True and "classic" in str(refused)
+    done = tool(writer, "insert_image", content_id=page["id"], expected_version=page["version"],
+                media_id=bare)  # fmt: skip
+    assert any("no alt text" in note for note in done["notes"])
+    body = tool(writer, "get_content", content_id=page["id"])["content"]
+    assert body.startswith("<p>Hola</p>\n<p>Adiós</p>\n\n<!-- wp:image")
+
+
+def test_insert_image_into_a_published_item_is_a_live_edit(writer, created, image_id):
+    draft = tool(writer, "create_draft", type="page", lang="pt", title="wpmcp publicada",
+                 content=ARTICLE)  # fmt: skip
+    created["post"].append(draft["id"])
+    live = tool(
+        writer, "publish_content", content_id=draft["id"], expected_version=draft["version"]
+    )
+    inserted = tool(writer, "insert_image", content_id=draft["id"],
+                    expected_version=live["version"], media_id=image_id,
+                    alt_text="Um chip")  # fmt: skip
+    assert inserted["status"] == "publish" and inserted["before"]["revision_id"]
+    page = httpx.get(live["link"], follow_redirects=True, timeout=20).text
+    assert 'alt="Um chip"' in page
+
+    log = subprocess.run(  # noqa: S603 - fixed command
+        [str(ROOT / "bin" / "dev"), "wp", "option", "get", "wpmcp_live_log", "--format=json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert [e["action"] for e in json.loads(log) if e["id"] == draft["id"]][-1] == "inserted image"
+
+    tool(writer, "restore_revision", content_id=draft["id"], expected_version=inserted["version"],
+         revision_id=inserted["before"]["revision_id"])  # fmt: skip
+    assert tool(writer, "get_content", content_id=draft["id"])["content"] == ARTICLE
+
+    dev_wp("option", "update", "page_on_front", str(draft["id"]))
+    try:
+        current = tool(writer, "get_content", content_id=draft["id"])
+        refused = attempt(writer, "insert_image", content_id=draft["id"],
+                          expected_version=current["version"], media_id=image_id)  # fmt: skip
+        assert refused["isError"] is True and "is protected" in str(refused)
+    finally:
+        dev_wp("option", "update", "page_on_front", "0")

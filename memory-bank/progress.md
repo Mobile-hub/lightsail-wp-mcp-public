@@ -27,6 +27,14 @@
   Claude, SES sandbox and production access).
 - 2026-11-18 — `docs/prompts.md`: test prompts that call every tool and the refusals,
   for trying the tools against the real clients (see "Not done").
+- 2026-11-19 — ChatGPT: `import_image` with generated images works against the real
+  product. Editing long pages failed ("the connector does not return the version"): its
+  tool-result budget dropped the body line and the `version` after it. The failing pages
+  had about 18,000 characters; edits of the same pages worked the day before, when
+  ChatGPT took the version from write results (no body) instead of get_content.
+- 2026-11-19 — 0.6.0 (bridge 0.6.0): `insert_image`, `get_content` in parts with the
+  version first, the shrink check (`allow_shrink`). Unit tests and 39 integration tests
+  against the local stack.
 
 ## Not done
 - Connecting Claude.
@@ -37,5 +45,6 @@
 
 ## Known gaps
 - Claude's part of `docs/clients.md` is unverified.
-- `import_image` through ChatGPT's file parameter has not yet been tried against the real
-  product.
+- ChatGPT's tool-result budget is undocumented: `DEFAULT_PART` (8,000 characters) is a
+  guess with margin. If long pages still fail, lower it before anything else.
+- `insert_image` has not yet been tried against the real products.
