@@ -156,6 +156,8 @@ def test_get_content_puts_the_version_first_and_the_body_last(wp_app, wp_client,
     assert data["content_complete"] is True and data["next_offset"] is None
     assert data["content_length"] == len("<p>short 🐻</p>")
     assert "notes" not in data
+    # The same object as structuredContent, also without a "content" key.
+    assert result["structuredContent"] == data and "content" not in result["structuredContent"]
     # A client that keeps only the first lines of the answer still has the version.
     text = raw_text(result)
     assert text.index('"version"') < text.index('"body"')

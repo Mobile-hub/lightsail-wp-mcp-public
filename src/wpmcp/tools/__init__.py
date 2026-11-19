@@ -29,6 +29,9 @@ class ToolSpec:
     open_world: bool = False
     # Changes what visitors see: counts against the live budget too.
     live: bool = False
+    # Repeating the call with the same arguments changes nothing more (reads; changes
+    # guarded by `expected_version`, which a repeat fails). None: read tools say True.
+    idempotent: bool | None = None
     meta: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -46,6 +49,7 @@ class ToolSpec:
             readOnlyHint=self.read_only,
             destructiveHint=False if self.read_only else self.destructive,
             openWorldHint=self.open_world,
+            idempotentHint=True if self.read_only else bool(self.idempotent),
         )
 
 

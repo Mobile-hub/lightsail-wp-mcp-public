@@ -277,3 +277,35 @@ def test_settings_read_protected_ids_and_live_budget(tmp_path):
     assert settings.live_budget == 5
     with pytest.raises(ValueError, match="LIVE_BUDGET"):
         make_settings(live_budget=-1)
+
+
+IDEMPOTENT = {
+    "update_draft", "update_media", "publish_content", "schedule_content",
+    "unpublish_content", "update_published_content", "insert_image", "restore_revision",
+    "trash_content", "link_translations", "apply_menu",
+}  # fmt: skip
+NOT_IDEMPOTENT = {
+    "create_draft", "create_category", "import_image", "request_image_upload",
+    "restore_menu", "restore_from_trash",
+}  # fmt: skip
+
+
+def test_every_tool_declares_an_object_output_and_its_idempotency(live_app, live_client, clock):
+    token, _ = access_token(live_app, clock)
+    tools = {t["name"]: t for t in rpc_result(rpc(live_client, token, "tools/list"))["tools"]}
+    for name, tool in tools.items():
+        assert tool["outputSchema"]["type"] == "object", name
+        hints = tool["annotations"]
+        if hints["readOnlyHint"]:
+            assert hints["idempotentHint"] is True, name
+    for name in IDEMPOTENT:
+        assert tools[name]["annotations"]["idempotentHint"] is True, name
+    for name in NOT_IDEMPOTENT:
+        assert tools[name]["annotations"]["idempotentHint"] is False, name
+
+
+def test_results_come_as_structured_content_too(live_app, live_client, clock, fake):
+    token, _ = access_token(live_app, clock)
+    result = call(live_client, token, "publish_content", {"content_id": 8, "expected_version": V})
+    assert result["structuredContent"] == json.loads(result["content"][0]["text"])
+    assert result["structuredContent"]["id"] == 501

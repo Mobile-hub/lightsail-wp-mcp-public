@@ -6,6 +6,13 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Every tool declares an `outputSchema` (an object) and answers `structuredContent`
+  next to the JSON text, as OpenAI's MCP documentation recommends.
+- `idempotentHint` on every tool: true for reads and for changes guarded by
+  `expected_version` (a repeat is refused as stale), false for creations, uploads,
+  `restore_menu` and `restore_from_trash`.
+
 ## [0.6.1] - 2026-11-19
 
 ### Fixed

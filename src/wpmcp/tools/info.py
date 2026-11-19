@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from mcp.server.fastmcp import Context
 
 from .. import __version__
@@ -10,7 +12,7 @@ from . import Registry, ToolSpec, principal_of
 
 
 def register(registry: Registry, settings: Settings) -> None:
-    def get_connection_info(ctx: Context) -> dict:
+    def get_connection_info(ctx: Context) -> dict[str, Any]:
         """Describe this connection: which site it operates, which client is connected and
         whether it may change content or only read it."""
         principal = principal_of(ctx)

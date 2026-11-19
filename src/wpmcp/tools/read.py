@@ -44,7 +44,7 @@ def register(registry: Registry, wp: WordPressClient) -> None:
         except WordPressError as exc:
             raise ToolError(str(exc)) from exc
 
-    async def get_site_overview() -> dict:
+    async def get_site_overview() -> dict[str, Any]:
         """Overview of the site: name, URL, languages (with the default one), how many posts
         and pages exist per status and per language, number of categories, front page,
         timezone and versions. Start here to learn the language slugs."""
@@ -73,7 +73,7 @@ def register(registry: Registry, wp: WordPressClient) -> None:
         order_by: Literal["date", "modified", "title", "relevance"] = "date",
         page: Page = 1,
         per_page: PerPage = 20,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Find posts and pages, optionally by words, language, status or category, or those
         still missing a translation. Returns short plain-text excerpts, the language of each
         item and the IDs of its translations; use get_content for the full text."""
@@ -107,7 +107,7 @@ def register(registry: Registry, wp: WordPressClient) -> None:
             int,
             Field(ge=1000, le=MAX_PART, description="Most characters of the body to return."),
         ] = DEFAULT_PART,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Full post or page: `body` (the raw content, block markup or classic HTML: what the
         `content` argument of update_draft replaces), excerpt, status, language and
         translations, categories and tags, featured image, SEO fields, any site-specific
@@ -121,7 +121,7 @@ def register(registry: Registry, wp: WordPressClient) -> None:
         taxonomy: Literal["category", "post_tag"] = "category",
         lang: Lang = None,
         search: Annotated[str, Field(max_length=200)] = "",
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Categories or tags, with language, number of posts and translation links."""
         return await call("/terms", {"taxonomy": taxonomy, "lang": lang, "search": search})
 
@@ -134,18 +134,18 @@ def register(registry: Registry, wp: WordPressClient) -> None:
         ] = None,
         page: Page = 1,
         per_page: PerPage = 20,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Images in the media library: title, alt text, caption, size and URL."""
         return await call(
             "/media",
             {"search": search, "parent": attached_to, "page": page, "per_page": per_page},
         )
 
-    async def list_revisions(content_id: ContentId) -> dict:
+    async def list_revisions(content_id: ContentId) -> dict[str, Any]:
         """Saved revisions of a post or page (newest first), with dates and sizes."""
         return await call(f"/content/{content_id}/revisions")
 
-    async def get_menus() -> dict:
+    async def get_menus() -> dict[str, Any]:
         """Navigation menus per theme location and language, with their items."""
         return await call("/menus")
 
@@ -158,7 +158,7 @@ def register(registry: Registry, wp: WordPressClient) -> None:
             ),
         ] = None,
         limit: Annotated[int, Field(ge=1, le=50)] = 30,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Posts and pages created, edited, published or trashed recently, newest first."""
         return await call("/changes", {"since": since, "limit": limit})
 

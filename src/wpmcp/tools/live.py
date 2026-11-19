@@ -81,7 +81,7 @@ def register(
                 "change it in wp-admin."
             )
 
-    async def post(ctx: Context, tool: str, path: str, body: dict[str, Any]) -> dict:
+    async def post(ctx: Context, tool: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
         try:
             result = await wp.post(path, body)
         except WordPressError as exc:
@@ -91,7 +91,7 @@ def register(
 
     async def publish_content(
         ctx: Context, content_id: ContentId, expected_version: Version
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Publish a draft or pending post or page now: it becomes visible to everyone, and
         appears in the language switcher of its translations. Only with the user's explicit
         go-ahead for this item. Undo with unpublish_content."""
@@ -114,7 +114,7 @@ def register(
                 "2026-12-01T09:00:00Z. Between 5 minutes and one year from now.",
             ),
         ],
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Schedule a draft, pending or already scheduled item to be published at a given
         time. Only with the user's explicit go-ahead. Undo with unpublish_content."""
         when = _utc(publish_at)
@@ -127,7 +127,7 @@ def register(
 
     async def unpublish_content(
         ctx: Context, content_id: ContentId, expected_version: Version
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Take a published or scheduled item back to draft: visitors no longer see it and
         its translations stop linking to it. Only with the user's explicit go-ahead."""
         guard(content_id)
@@ -153,7 +153,7 @@ def register(
         slug: Slug | None = None,
         seo: Seo | None = None,
         allow_shrink: AllowShrink = False,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Change a published (or scheduled, or private) post or page: visitors see the
         change at once. Only the fields you give change; content replaces the whole body, so
         have all of it first (a long body comes from get_content in parts); to add an image,
@@ -199,7 +199,7 @@ def register(
         ] = None,
         caption: Annotated[str | None, Field(max_length=500)] = None,
         size: Literal["medium", "large", "full"] = "large",
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Add an image from the media library to the body of a post or page, without
         rewriting the body: the rest stays exactly as it was. Use it instead of update_draft
         or update_published_content to place an image, one call per item (each translation
@@ -225,7 +225,7 @@ def register(
         content_id: ContentId,
         expected_version: Version,
         revision_id: Annotated[int, Field(ge=1, description="Revision ID (list_revisions).")],
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Put a post or page's title, content and excerpt back to a saved revision (on a
         published item, visitors see it at once). The current state is saved as a revision
         first. Only with the user's explicit go-ahead."""
@@ -237,7 +237,9 @@ def register(
             {"expected_version": expected_version, "revision_id": revision_id},
         )
 
-    async def trash_content(ctx: Context, content_id: ContentId, expected_version: Version) -> dict:
+    async def trash_content(
+        ctx: Context, content_id: ContentId, expected_version: Version
+    ) -> dict[str, Any]:
         """Move a post or page to the trash (never deleted permanently: the owner empties the
         trash in wp-admin, or WordPress after 30 days). Its translations stay. Only with the
         user's explicit go-ahead. Undo with restore_from_trash."""
@@ -249,7 +251,7 @@ def register(
             {"expected_version": expected_version},
         )
 
-    async def restore_from_trash(ctx: Context, content_id: ContentId) -> dict:
+    async def restore_from_trash(ctx: Context, content_id: ContentId) -> dict[str, Any]:
         """Bring a trashed post or page back, as a draft (publish it again to show it)."""
         return await post(ctx, "restore_from_trash", f"/content/{content_id}/untrash", {})
 
@@ -264,7 +266,7 @@ def register(
                 "must already be in that language. Existing links are kept.",
             ),
         ],
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Link existing posts (or pages) as translations of each other, so the language
         switcher and hreflang connect them. Refused if two items would be the same
         language's translation. Only with the user's explicit go-ahead."""
@@ -277,7 +279,7 @@ def register(
         menu_id: Annotated[int, Field(ge=1, description="Menu ID (get_menus).")],
         expected_version: MenuVersion,
         items: Annotated[list[MenuItem], Field(max_length=60)],
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Replace the items of a menu shown by a theme location (see get_menus) with this
         list, in order. Items not listed are removed (the language switcher is kept). The
         previous version is saved: restore_menu puts it back. Never changes which menu a
@@ -290,25 +292,35 @@ def register(
 
     async def restore_menu(
         ctx: Context, menu_id: Annotated[int, Field(ge=1, description="Menu ID (get_menus).")]
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Put a menu back to the version saved before its last change by apply_menu."""
         return await post(ctx, "restore_menu", f"/menus/{menu_id}/restore", {})
 
-    for fn, title, destructive in (
-        (publish_content, "Publish", False),
-        (schedule_content, "Schedule publication", False),
-        (unpublish_content, "Unpublish", True),
-        (update_published_content, "Edit published content", True),
+    # (tool, title, destructive, idempotent): a repeat of a version-guarded change is
+    # refused as stale, and linking the same translations again changes nothing.
+    for fn, title, destructive, idempotent in (
+        (publish_content, "Publish", False, True),
+        (schedule_content, "Schedule publication", False, True),
+        (unpublish_content, "Unpublish", True, True),
+        (update_published_content, "Edit published content", True, True),
         # A draft or a published item: counted as live either way, refused when protected.
-        (insert_image, "Insert an image", True),
-        (restore_revision, "Restore a revision", True),
-        (trash_content, "Move to trash", True),
-        (link_translations, "Link translations", True),
-        (apply_menu, "Change a menu", True),
-        (restore_menu, "Restore a menu", True),
+        (insert_image, "Insert an image", True, True),
+        (restore_revision, "Restore a revision", True, True),
+        (trash_content, "Move to trash", True, True),
+        (link_translations, "Link translations", True, True),
+        (apply_menu, "Change a menu", True, True),
+        # Each call puts back the version saved before the last apply_menu.
+        (restore_menu, "Restore a menu", True, False),
     ):
         registry.add(
-            ToolSpec(fn, title=title, scope=SCOPE_WRITE, destructive=destructive, live=True)
+            ToolSpec(
+                fn,
+                title=title,
+                scope=SCOPE_WRITE,
+                destructive=destructive,
+                live=True,
+                idempotent=idempotent,
+            )
         )
     # Back to draft: nothing becomes visible, so it is not a live change.
     registry.add(ToolSpec(restore_from_trash, title="Restore from trash", scope=SCOPE_WRITE))

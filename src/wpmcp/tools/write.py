@@ -90,7 +90,7 @@ def register(
     media: MediaProcessor,
     clock: Callable[[], float] = time.time,
 ) -> None:
-    async def write(ctx: Context, tool: str, path: str, body: dict[str, Any]) -> dict:
+    async def write(ctx: Context, tool: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
         try:
             result = await wp.post(path, body)
         except WordPressError as exc:
@@ -123,7 +123,7 @@ def register(
         parent_id: Annotated[int | None, Field(ge=1, description="Parent page (pages).")] = None,
         slug: Slug | None = None,
         seo: Seo | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Create a draft post or page in one language, optionally as the translation of an
         existing item. Never publishes: the result is a draft only logged-in editors see.
         Returns the draft (without the body), its preview_url and edit_url for the owner, and
@@ -166,7 +166,7 @@ def register(
         slug: Slug | None = None,
         seo: Seo | None = None,
         allow_shrink: AllowShrink = False,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Change a draft or pending post or page. Only the fields you give change; content
         replaces the whole body, so have all of it first (a long body comes from get_content
         in parts). To add an image to the body, use insert_image instead. Published items
@@ -187,7 +187,7 @@ def register(
         ] = None,
         parent_id: OptionalId = None,
         description: Annotated[str, Field(max_length=2000)] = "",
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Create a category in one language, optionally as the translation of another.
         Category names cannot contain emoji on this site."""
         body = {
@@ -206,7 +206,7 @@ def register(
         alt_text: MediaText | None = None,
         caption: MediaText | None = None,
         attach_to: OptionalId = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Put an image from this conversation (uploaded or generated) into the media
         library. Pass the image file itself as `image`; only ChatGPT can do that, other
         clients use request_image_upload. The image is checked and re-encoded (camera data
@@ -232,7 +232,7 @@ def register(
         alt_text: MediaText | None = None,
         caption: MediaText | None = None,
         attach_to: OptionalId = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Get a single-use link where the user uploads one image from a browser or phone
         (for clients that cannot pass files, or images not in the conversation). Give the
         user the link; after they confirm, find the image with list_media (newest first)."""
@@ -257,7 +257,7 @@ def register(
         title: Annotated[str | None, Field(max_length=200)] = None,
         alt_text: MediaText | None = None,
         caption: MediaText | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Change an image's title, alt text or caption. Images are shared by every language
         and every post that uses them: the change shows wherever the image appears, on
         published posts too. Alt text cannot contain emoji on this site."""
@@ -267,7 +267,7 @@ def register(
         return await write(ctx, "update_media", f"/media/{media_id}", body)
 
     registry.add(ToolSpec(create_draft, title="Create a draft", scope=SCOPE_WRITE))
-    registry.add(ToolSpec(update_draft, title="Edit a draft", scope=SCOPE_WRITE))
+    registry.add(ToolSpec(update_draft, title="Edit a draft", scope=SCOPE_WRITE, idempotent=True))
     registry.add(ToolSpec(create_category, title="Create a category", scope=SCOPE_WRITE))
     registry.add(
         ToolSpec(
@@ -282,7 +282,13 @@ def register(
         ToolSpec(request_image_upload, title="Get an image upload link", scope=SCOPE_WRITE)
     )
     registry.add(
-        ToolSpec(update_media, title="Edit image details", scope=SCOPE_WRITE, destructive=True)
+        ToolSpec(
+            update_media,
+            title="Edit image details",
+            scope=SCOPE_WRITE,
+            destructive=True,
+            idempotent=True,
+        )
     )
 
 
