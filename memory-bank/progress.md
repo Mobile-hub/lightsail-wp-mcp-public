@@ -64,6 +64,10 @@
   Inglés, Wook, Bertrand, Waterstones, Bol...) and some publishers answer automated
   clients with 403/406/429, two only from the server's address; they stay off until a
   refused address shows a host that works. 34 hosts deployed.
+- 2026-11-20 — 0.11.0 (bridge 0.11.0): `analyze_seopress_content`, SEOPress's content
+  analysis of a published item through its ability; the local stack routes WordPress's
+  requests to its own address to Apache so SEOPress can load pages. 518 tests, 99%
+  coverage.
 
 ## Not done
 - Connecting Claude.

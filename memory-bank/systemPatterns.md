@@ -51,3 +51,7 @@ Stable decisions and their reasons live in `docs/architecture.md` and
 - **SEO goes through `seo.php`.** Never call an SEO plugin from other bridge files: read
   with `wpmcp_seo()`, write with `wpmcp_save_seo()`, and refuse a write that sets SEO
   fields up front with `wpmcp_seo_check()`, so nothing is half saved.
+- **Another plugin's feature through its ability, not its REST namespace.** When a plugin
+  offers an ability (SEOPress's content analysis), the bridge runs it in PHP and answers a
+  compact summary; the integration user's REST allowlist stays `wpmcp/v1` only. Check what
+  the plugin's "GET" really does first: SEOPress's analysis writes its own score.

@@ -41,8 +41,10 @@ language, status, category, missing translations; with each item's `version`),
 `list_terms`, `list_media`, `list_revisions`, `get_menus` (theme locations and menu
 widgets, such as a footer's link lists), `get_recent_changes`, `inspect_page` (what search
 engines see on a published item: status, canonical, hreflang, robots, Open Graph, JSON-LD
-types; fetched as a visitor, by ID) and `check_sitemap` (published items the XML sitemap
-leaves out).
+types; fetched as a visitor, by ID), `check_sitemap` (published items the XML sitemap
+leaves out) and, on a site that runs SEOPress, `analyze_seopress_content` (SEOPress's
+content analysis of a published item: checks passed and failed, each with its impact and
+finding).
 
 Draft tools (`wp:write`), none of which changes what visitors see: `create_draft` (in one
 language, optionally linked as a translation, with categories, featured image and SEO),

@@ -165,6 +165,20 @@ def register(registry: Registry, wp: WordPressClient) -> None:
         """Posts and pages created, edited, published or trashed recently, newest first."""
         return await call("/changes", {"since": since, "limit": limit})
 
+    async def analyze_seopress_content(
+        content_id: Annotated[int, Field(ge=1, description="ID of a published post or page.")],
+    ) -> dict[str, Any]:
+        """SEOPress's content analysis of a published post or page, run on the page as
+        visitors get it, as SEOPress's editor panel runs it: `score_summary` (checks
+        passed, failed and in total; low-impact suggestions count as passed), `verdict`,
+        the `keywords` checked (the focus keyphrase first) and `checks`, failed ones first,
+        each with its impact (high, medium, low, good) and SEOPress's finding as plain text.
+        Only for published items without a password, and only on a site that runs
+        SEOPress. Changes no content or SEO field; SEOPress keeps the result as the item's
+        score, as its editor does. Use it after SEO changes; inspect_page shows the tags
+        themselves."""
+        return await call(f"/content/{content_id}/seo-analysis")
+
     for fn, title in (
         (get_site_overview, "Site overview"),
         (search_content, "Search posts and pages"),
@@ -174,6 +188,7 @@ def register(registry: Registry, wp: WordPressClient) -> None:
         (list_revisions, "List revisions"),
         (get_menus, "Show menus"),
         (get_recent_changes, "Recent changes"),
+        (analyze_seopress_content, "SEOPress content analysis"),
     ):
         registry.add(ToolSpec(fn, title=title))
 

@@ -1,3 +1,3 @@
 """Remote MCP server for a self-hosted WordPress site."""
 
-__version__ = "0.10.1"
+__version__ = "0.11.0"

@@ -1178,6 +1178,35 @@ def test_seo_fields_go_to_seopress(writer, created, seo_plugins):
     assert meta(item["id"], "_seopress_social_fb_title") == ""
 
 
+def test_seopress_content_analysis_of_a_published_item(writer, created, seo_plugins):
+    body = "<p>A book about trains and stations.</p><h2>More trains</h2><p>Trains, again.</p>"
+    item = draft(writer, created, "wpmcp seopress analysis", body)
+    refused = attempt(writer, "analyze_seopress_content", content_id=item["id"])
+    assert refused["isError"] is True and "SEOPress is not active" in str(refused)
+
+    seo_plugins("wp-seopress")
+    refused = attempt(writer, "analyze_seopress_content", content_id=item["id"])
+    assert refused["isError"] is True and "only published posts and pages" in str(refused)
+    item = tool(writer, "get_content", content_id=item["id"])  # the version covers SEO fields
+    item = tool(writer, "update_draft", content_id=item["id"], expected_version=item["version"],
+                seo={"focus_keyphrase": "trains"})  # fmt: skip
+    tool(writer, "publish_content", content_id=item["id"], expected_version=item["version"])
+
+    # SEOPress loads the page as a visitor (dev/mu-plugins routes it to Apache) and scores it.
+    found = tool(writer, "analyze_seopress_content", content_id=item["id"])
+    summary, checks = found["score_summary"], found["checks"]
+    assert found["plugin"] == "seopress" and found["keywords"] == ["trains"]
+    assert summary["total"] == summary["passed"] + summary["failed"] == len(checks) > 5
+    assert found["verdict"] == ("good" if summary["failed"] == 0 else "needs_improvement")
+    order = ["high", "medium", "low", "good"]
+    assert [c["impact"] for c in checks] == sorted((c["impact"] for c in checks), key=order.index)
+    assert all(c["passed"] is (c["impact"] in ("low", "good")) for c in checks)
+    assert all(c["title"] and c["finding"] and "<" not in c["finding"] for c in checks)
+    headings = next(c for c in checks if c["check"] == "headings")
+    assert "Heading 2 (H2)" in headings["finding"] and "trains" in headings["finding"]
+    assert dev_eval(f"echo get_post_status( {item['id']} );") == "publish"
+
+
 def test_seo_fields_are_refused_without_exactly_one_seo_plugin(writer, created, seo_plugins):
     seo_plugins()
     assert tool(writer, "get_site_overview")["seo_plugin"] is None

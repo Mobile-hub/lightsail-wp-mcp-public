@@ -9,6 +9,9 @@
  * fields is refused as a whole rather than saved without them. Only the fields given
  * change; null (or an empty string) clears one. Texts are stored as each plugin's own
  * editor stores them.
+ *
+ * With SEOPress, its content analysis of a published item (wpmcp/analyze-seopress-content)
+ * comes through here too, by its own ability.
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -187,4 +190,159 @@ function wpmcp_save_seo_seopress( int $post_id, array $seo ): ?WP_Error {
 		$put( WPMCP_BRIDGE_SEOPRESS_KEYWORDS, implode( ',', '' === $focus ? $list : array_merge( array( $focus ), $list ) ) );
 	}
 	return null;
+}
+
+// ------------------------------------------------------------ SEOPress content analysis
+
+const WPMCP_BRIDGE_SEOPRESS_ANALYSIS = 'seopress/analyze-post-content';
+// Most serious first. "low" is a suggestion: SEOPress counts it as passed.
+const WPMCP_BRIDGE_SEOPRESS_IMPACTS = array( 'high', 'medium', 'low', 'good' );
+const WPMCP_BRIDGE_FINDING_CHARS    = 400;
+
+/** The SEO operations: routes of wpmcp/v1 and abilities (see abilities.php). */
+function wpmcp_seo_operations(): array {
+	return array(
+		array(
+			'ability'             => 'wpmcp/analyze-seopress-content',
+			'label'               => 'SEOPress content analysis',
+			'description'         => 'SEOPress\'s content analysis of a published post or page, run on the page as visitors get it: how many checks pass and fail, and each check with its impact and finding as plain text.',
+			'route'               => '/content/(?P<id>\d+)/seo-analysis',
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => 'wpmcp_rest_seo_analysis',
+			'permission_callback' => 'wpmcp_can_edit_item',
+			'args'                => array(
+				'id' => array( 'type' => 'integer', 'minimum' => 1, 'required' => true ),
+			),
+			// Nothing visitors see changes. SEOPress keeps the result as the item's score,
+			// as it does when its editor panel runs the analysis.
+			'annotations'         => wpmcp_annotations( true, false, true ),
+		),
+	);
+}
+
+/**
+ * Runs SEOPress's own ability, which loads the item's page as a visitor (a request from
+ * the server to the site's address, without the caller's credentials) and scores it. A
+ * draft has no page a visitor can load, so only published items are analysed.
+ */
+function wpmcp_rest_seo_analysis( WP_REST_Request $request ) {
+	$post = get_post( (int) $request['id'] );
+	if ( ! in_array( 'seopress', wpmcp_seo_plugins(), true ) ) {
+		return wpmcp_error( 'wpmcp_no_seopress', 'The content analysis is SEOPress\'s, and SEOPress is not active on this site.', 409 );
+	}
+	if ( ! function_exists( 'wp_has_ability' ) || ! wp_has_ability( WPMCP_BRIDGE_SEOPRESS_ANALYSIS ) ) {
+		return wpmcp_error( 'wpmcp_no_seopress_analysis', 'This SEOPress does not offer its content analysis to other plugins: it needs SEOPress 9.9 or later and WordPress 6.9 or later.', 409 );
+	}
+	if ( function_exists( 'seopress_metabox_role_is_blocked' ) && seopress_metabox_role_is_blocked( 'CONTENT_ANALYSIS' ) ) {
+		return wpmcp_error( 'wpmcp_seopress_analysis_hidden', 'The site\'s SEOPress settings hide the content analysis from editors.', 403 );
+	}
+	if ( 'publish' !== $post->post_status || '' !== $post->post_password ) {
+		$state = '' !== $post->post_password ? 'password-protected' : 'a ' . $post->post_status . ' item';
+		return wpmcp_error(
+			'wpmcp_not_public',
+			sprintf( 'Item %d is %s: SEOPress analyses the page as visitors get it, so only published posts and pages without a password can be analysed. Check the SEO fields of a draft with get_content.', $post->ID, $state ),
+			409
+		);
+	}
+
+	$data = wp_get_ability( WPMCP_BRIDGE_SEOPRESS_ANALYSIS )->execute( array( 'post_id' => $post->ID ) );
+	if ( is_wp_error( $data ) ) {
+		$status = (int) ( $data->get_error_data()['status'] ?? 0 );
+		if ( 429 === $status ) {
+			return wpmcp_error( 'wpmcp_seopress_busy', 'SEOPress allows only so many analyses a minute: try again in a minute.', 429 );
+		}
+		return wpmcp_error( 'wpmcp_seopress_failed', 'SEOPress could not analyse the page: ' . wp_strip_all_tags( $data->get_error_message() ), 409 );
+	}
+	if ( ! is_array( $data ) || ! isset( $data['score'] ) || ! is_array( $data['score'] ) ) {
+		// When the page cannot be loaded, SEOPress answers why in place of the title.
+		$why = is_array( $data ) && is_string( $data['title'] ?? null ) ? wp_strip_all_tags( $data['title'] ) : '';
+		return wpmcp_error( 'wpmcp_seopress_failed', trim( 'SEOPress could not load the page as visitors get it. ' . $why ), 409 );
+	}
+	return wpmcp_seopress_analysis_summary( $post, $data['score'] );
+}
+
+/** The checks that ran, most serious first, as SEOPress counts them (ignored ones apart). */
+function wpmcp_seopress_analysis_summary( WP_Post $post, array $score ): array {
+	$ignored = wpmcp_seopress_ignored_checks( $post->ID );
+	$details = wpmcp_seopress_check_details( $post );
+	$checks  = array();
+	foreach ( $score as $key => $impact ) {
+		// null: the check did not run on this page.
+		if ( ! is_string( $key ) || ! in_array( $impact, WPMCP_BRIDGE_SEOPRESS_IMPACTS, true ) || in_array( $key, $ignored, true ) ) {
+			continue;
+		}
+		$detail   = is_array( $details[ $key ] ?? null ) ? $details[ $key ] : array();
+		$checks[] = array(
+			'check'   => $key,
+			'title'   => is_string( $detail['title'] ?? null ) ? $detail['title'] : $key,
+			'impact'  => $impact,
+			'passed'  => in_array( $impact, array( 'low', 'good' ), true ),
+			'finding' => wpmcp_seopress_text( $detail['desc'] ?? '' ),
+		);
+	}
+	$rank = array_flip( WPMCP_BRIDGE_SEOPRESS_IMPACTS );
+	usort( $checks, static fn ( $a, $b ) => $rank[ $a['impact'] ] <=> $rank[ $b['impact'] ] );
+
+	$passed   = count( array_filter( array_column( $checks, 'passed' ) ) );
+	$failed   = count( $checks ) - $passed;
+	$keywords = wpmcp_seopress_keywords( $post->ID );
+	$result   = array(
+		'id'            => $post->ID,
+		'link'          => get_permalink( $post ),
+		'plugin'        => 'seopress',
+		'keywords'      => $keywords,
+		'verdict'       => 0 === $failed ? 'good' : 'needs_improvement',
+		'score_summary' => array(
+			'passed' => $passed,
+			'failed' => $failed,
+			'total'  => count( $checks ),
+		),
+		'checks'        => $checks,
+	);
+	if ( $ignored ) {
+		$result['ignored'] = $ignored;
+	}
+	if ( ! $keywords ) {
+		$result['notes'] = array( 'No focus keyphrase is set, so the keyword checks have nothing to look for: set seo.focus_keyphrase first.' );
+	}
+	return $result;
+}
+
+/** Title and finding (HTML) of each check, from the analysis SEOPress has just stored. */
+function wpmcp_seopress_check_details( WP_Post $post ): array {
+	if ( ! function_exists( 'seopress_get_service' ) ) {
+		return array();
+	}
+	try {
+		$analyzes = seopress_get_service( 'GetContentAnalysis' )->getAnalyzes( $post );
+	} catch ( Throwable $e ) {
+		return array();
+	}
+	return is_array( $analyzes ) ? $analyzes : array();
+}
+
+/** Checks the site owner chose to ignore for this item (SEOPress PRO). */
+function wpmcp_seopress_ignored_checks( int $post_id ): array {
+	$helper = '\\SEOPress\\Helpers\\ContentAnalysis';
+	if ( ! method_exists( $helper, 'getIgnoredChecks' ) ) {
+		return array();
+	}
+	try {
+		return array_values( array_filter( (array) $helper::getIgnoredChecks( $post_id ), 'is_string' ) );
+	} catch ( Throwable $e ) {
+		return array();
+	}
+}
+
+/** A finding as plain text: headings, paragraphs and list items apart, no upsell links. */
+function wpmcp_seopress_text( $html ): string {
+	$html = (string) preg_replace( '#<a\b[^>]*\bseopress-help\b[^>]*>.*?</a>#is', '', (string) $html );
+	$html = (string) preg_replace( '#</h[1-6]>#i', ': ', $html );
+	$html = (string) preg_replace( '#<(?:/p|/li|/ul|br\s*/?)>#i', ' ', $html );
+	$text = html_entity_decode( wp_strip_all_tags( $html ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+	$text = trim( (string) preg_replace( '/\s+/u', ' ', $text ) );
+	if ( mb_strlen( $text ) <= WPMCP_BRIDGE_FINDING_CHARS ) {
+		return $text;
+	}
+	return rtrim( mb_substr( $text, 0, WPMCP_BRIDGE_FINDING_CHARS - 1 ) ) . '…';
 }

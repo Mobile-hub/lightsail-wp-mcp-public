@@ -6,6 +6,23 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-20
+
+### Added
+- `analyze_seopress_content` (`wp:read`): SEOPress's content analysis of a published post
+  or page, asked for by ChatGPT. Bridge 0.11.0 (`seo.php`, ability
+  `wpmcp/analyze-seopress-content`, route `/content/{id}/seo-analysis`) runs SEOPress's
+  own ability `seopress/analyze-post-content`, which loads the page as a visitor gets it,
+  and answers `score_summary` (passed, failed, total; low-impact suggestions count as
+  passed), `verdict`, the keyphrases checked and each check with its impact and finding as
+  plain text (400 characters at most), failed ones first. Refused for drafts and other
+  unpublished or password-protected items, without SEOPress (9.9 or later, on WordPress 6.9
+  or later), and when SEOPress's settings hide the analysis from editors. SEOPress keeps
+  the result as the item's score, as its editor does; nothing else is written.
+- The local stack sends WordPress's requests to its own address to Apache inside the
+  container (`dev/mu-plugins/wpmcp-dev-site.php`), so SEOPress can load pages there as it
+  does in production.
+
 ## [0.10.1] - 2026-11-19
 
 ### Changed

@@ -48,6 +48,7 @@ such as *About* and *Tips*. Swap in your own site's topics, languages and IDs.
 | 2.13 | *What do search engines see on the published post `<post-id>`? Check its canonical, hreflang and structured data.* | `inspect_page` | Status, title, description, canonical, hreflang per language, JSON-LD types, `checks` naming any problem; no HTML |
 | 2.14 | *Are all the published posts in the XML sitemap?* | `check_sitemap` | The sitemaps and their counts, published items it leaves out (noindex ones apart) |
 | 2.15 | *Show me the footer links in each language.* | `get_menus` | The menus of the footer's widgets (`widget_area`, `widget_title`, `lang`), next to the theme locations' |
+| 2.16 | *(SEOPress sites)* *What does SEOPress's content analysis say about the published post `<post-id>`? What should I fix first?* | `analyze_seopress_content` | `score_summary` (passed, failed, total), the keyphrases checked, failed checks first with SEOPress's finding in plain text; the client suggests fixes before making any |
 
 ## 3. Drafts, categories and images
 
@@ -129,6 +130,7 @@ These should end in a clear explanation to the user, not in a retry in another f
 | 7.13 | — | *Insert image `<image-id>` after the paragraph that mentions "chip".* (in a post where several do) | Refused: several blocks contain that text; the client asks for longer text |
 | 7.14 | `WPMCP_LIVE_BUDGET` below the number of items | *Add the guide link to these 40 posts.* | Refused whole, saying how many changes the call needs and how many are left; nothing written |
 | 7.15 | — | *Inspect the page https://example.com/.* | `inspect_page` takes the ID of a published item of this site, never an address; the client says so |
+| 7.16 | SEOPress active | *Run SEOPress's content analysis on draft `<draft-id>`.* | Refused: only published items can be analysed (SEOPress loads the page as a visitor); the client offers to review the SEO fields with `get_content` instead |
 
 The budgets (`WPMCP_WRITE_BUDGET`, 120 writes an hour, and `WPMCP_LIVE_BUDGET`, 30 live
 changes an hour, by default; a bulk call counts each item) can be tested on the local stack
@@ -141,7 +143,7 @@ Every tool appears at least once:
 | Group | Tools | Sections |
 |---|---|---|
 | Info | `get_connection_info` | 1 |
-| Read | `get_site_overview`, `search_content`, `get_content`, `list_terms`, `list_media`, `list_revisions`, `get_menus`, `get_recent_changes`, `inspect_page`, `check_sitemap` | 1, 2 |
+| Read | `get_site_overview`, `search_content`, `get_content`, `list_terms`, `list_media`, `list_revisions`, `get_menus`, `get_recent_changes`, `inspect_page`, `check_sitemap`, `analyze_seopress_content` | 1, 2 |
 | Drafts | `create_draft`, `update_draft`, `create_category`, `import_image`, `import_image_from_url`, `request_image_upload`, `update_media` | 3 |
 | Live | `publish_content`, `schedule_content`, `update_published_content`, `insert_image`, `restore_revision`, `link_translations`, `unpublish_content`, `trash_content`, `restore_from_trash`, `apply_menu`, `add_menu_items`, `restore_menu` | 3, 4, 5, 6 |
 | Bulk | `bulk_add_links`, `bulk_update_seo`, `undo_bulk_change` | 6b |

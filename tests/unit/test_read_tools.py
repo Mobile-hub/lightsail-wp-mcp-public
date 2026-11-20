@@ -20,6 +20,7 @@ READ_TOOLS = {
     "list_revisions",
     "get_menus",
     "get_recent_changes",
+    "analyze_seopress_content",
     "inspect_page",
     "check_sitemap",
 }
@@ -111,6 +112,7 @@ def test_search_content_maps_arguments_to_bridge_parameters(wp_app, wp_client, c
         ("list_media", {"attached_to": 7}, "/media"),
         ("get_menus", {}, "/menus"),
         ("get_recent_changes", {"since": "2026-11-01T00:00:00Z"}, "/changes"),
+        ("analyze_seopress_content", {"content_id": 42}, "/content/42/seo-analysis"),
     ],
 )
 def test_each_read_tool_reaches_its_route(wp_app, wp_client, clock, name, arguments, path):
@@ -125,6 +127,8 @@ def test_each_read_tool_reaches_its_route(wp_app, wp_client, clock, name, argume
         ("search_content", {"per_page": 500}),
         ("get_content", {"content_id": 0}),
         ("get_content", {"content_id": "1/../../users"}),
+        ("analyze_seopress_content", {"content_id": 0}),
+        ("analyze_seopress_content", {"content_id": 1, "target_keywords": "x"}),
         ("list_terms", {"taxonomy": "nav_menu"}),
     ],
 )
@@ -217,6 +221,27 @@ def test_wordpress_errors_become_tool_errors(wp_app, wp_client, clock, fake):
     result = call(wp_client, token, "get_content", {"content_id": 9})
     assert result["isError"] is True
     assert "No post or page with that ID." in result["content"][0]["text"]
+
+
+@pytest.mark.parametrize(
+    ("status", "code", "message"),
+    [
+        (409, "wpmcp_not_public", "Item 9 is a draft item: SEOPress analyses the page"),
+        # A refusal by the site's SEOPress settings, not a refused credential.
+        (403, "wpmcp_seopress_analysis_hidden", "hide the content analysis from editors"),
+        (429, "wpmcp_seopress_busy", "try again in a minute"),
+    ],
+)
+def test_seopress_analysis_refusals_reach_the_model(
+    wp_app, wp_client, clock, fake, status, code, message
+):
+    fake.responses["/content/9/seo-analysis"] = httpx.Response(
+        status, json={"code": code, "message": f"... {message} ..."}
+    )
+    token, _ = access_token(wp_app, clock, scope="wp:read")
+    result = call(wp_client, token, "analyze_seopress_content", {"content_id": 9})
+    assert result["isError"] is True and message in result["content"][0]["text"]
+    assert "credentials" not in result["content"][0]["text"]
 
 
 def test_without_wordpress_only_the_diagnostic_tool_exists(app, client, clock):

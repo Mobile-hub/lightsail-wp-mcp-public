@@ -1,9 +1,20 @@
 # Active context
 
-_Updated 2026-11-19._
+_Updated 2026-11-20._
 
 ## Current focus
-0.10.0 (bridge unchanged, 0.9.0): `import_image_from_url`, asked for by ChatGPT so it could
+0.11.0 (bridge 0.11.0): `analyze_seopress_content`, asked for by ChatGPT, which proposed
+the REST route `/seopress/v1/posts/{id}/content-analysis`. That route is not read-only
+(it re-renders the page, stores the analysis and deletes two legacy meta keys) and is
+outside the integration user's REST allowlist, so the bridge runs SEOPress's own ability
+(`seopress/analyze-post-content`, SEOPress 9.9+) from `seo.php` and answers counts plus
+each check as capped plain text. SEOPress renders the page through a request to the
+site's own address with the caller's cookies: drafts cannot be analysed (the integration
+user has no session, by design), so the tool refuses anything not published. Checked in
+production on 2026-11-20 (read-only): SEOPress 10.4 has the ability, and the server
+reaches its own public address. Not yet deployed.
+
+Before that, 0.10.0 (bridge unchanged, 0.9.0): `import_image_from_url`, asked for by ChatGPT so it could
 put book covers it found on the web into the site's posts (it would not mark covers done
 while they were not in WordPress). Kept within rule 2 by an owner-listed host allowlist
 (`WPMCP_IMAGE_HOSTS`): without it the tool does not exist; the worker holds its own copy
