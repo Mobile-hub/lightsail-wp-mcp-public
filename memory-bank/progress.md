@@ -67,7 +67,7 @@
 - 2026-11-20 — 0.11.0 (bridge 0.11.0): `analyze_seopress_content`, SEOPress's content
   analysis of a published item through its ability; the local stack routes WordPress's
   requests to its own address to Apache so SEOPress can load pages. 518 tests, 99%
-  coverage.
+  coverage. Deployed the same day.
 
 ## Not done
 - Connecting Claude.

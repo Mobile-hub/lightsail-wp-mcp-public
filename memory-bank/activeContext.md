@@ -12,7 +12,9 @@ each check as capped plain text. SEOPress renders the page through a request to 
 site's own address with the caller's cookies: drafts cannot be analysed (the integration
 user has no session, by design), so the tool refuses anything not published. Checked in
 production on 2026-11-20 (read-only): SEOPress 10.4 has the ability, and the server
-reaches its own public address. Not yet deployed.
+reaches its own public address. Deployed on 2026-11-20 (service and bridge 0.11.0;
+the ability and its route are registered in production); not yet tried from ChatGPT,
+which needs "refresh tools" first.
 
 Before that, 0.10.0 (bridge unchanged, 0.9.0): `import_image_from_url`, asked for by ChatGPT so it could
 put book covers it found on the web into the site's posts (it would not mark covers done
@@ -47,7 +49,7 @@ levers taken. Tools declare `outputSchema` + `structuredContent` and `idempotent
 every bridge operation is a `wpmcp/*` ability that its route runs (`abilities.php`);
 abilities the owner lists on the WordPress side become tools (`site-abilities.php`,
 `tools/abilities.py`). Revisit replacing the service's MCP layer when the Adapter reaches
-1.0 and OAuth with scopes lands in core (targeted 7.3). Not yet deployed.
+1.0 and OAuth with scopes lands in core (targeted 7.3).
 
 Before 0.7.0: 0.6.0 (bridge 0.6.0) fixes editing long posts and pages from ChatGPT, which cuts long
 tool results at a line boundary and so lost the body and the `version` after it:
