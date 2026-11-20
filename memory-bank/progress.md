@@ -75,6 +75,9 @@
   for the bridge's call, and the error gives the page's address. On Debian, the deploy
   sets `KeepAliveTimeout 2`; the owner will review it after some use. Deployed the same
   day.
+- 2026-11-20 — 0.11.2: the tool description says SEOPress's verdict rule (good only at
+  every check passed). Found in SEOPress 10.4: images with `width` but no `height` are
+  ignored by its analysis.
 
 ## Not done
 - Connecting Claude.

@@ -6,6 +6,13 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-11-20
+
+### Changed
+- `analyze_seopress_content` says how SEOPress reaches its verdict: "good" only when every
+  check passes, so 16 of 17 is "needs_improvement", as in SEOPress's own editor and posts
+  list. ChatGPT had taken that for a fault of the tool.
+
 ## [0.11.1] - 2026-11-20
 
 ### Fixed

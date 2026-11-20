@@ -182,8 +182,10 @@ def register(registry: Registry, wp: WordPressClient) -> None:
     ) -> dict[str, Any]:
         """SEOPress's content analysis of a published post or page, run on the page as
         visitors get it, as SEOPress's editor panel runs it: `score_summary` (checks
-        passed, failed and in total; low-impact suggestions count as passed), `verdict`,
-        the `keywords` checked (the focus keyphrase first) and `checks`, failed ones first,
+        passed, failed and in total; low-impact suggestions count as passed), `verdict`
+        (SEOPress's own: good only when every check passes, so 16 of 17 is
+        needs_improvement), the `keywords` checked (the focus keyphrase first) and
+        `checks`, failed ones first,
         each with its impact (high, medium, low, good) and SEOPress's finding as plain text.
         Only for published items without a password, and only on a site that runs
         SEOPress. One item at a time: while an analysis runs, another call answers Busy.

@@ -3,7 +3,20 @@
 _Updated 2026-11-20._
 
 ## Current focus
-0.11.1 (bridge 0.11.1), 2026-11-20: the first use of `analyze_seopress_content` in
+0.11.2 (bridge unchanged, 0.11.1), 2026-11-20: after the first real analyses, ChatGPT
+reported three things. None was a fault of the tool:
+- "Busy" for parallel calls is by design (see 0.11.1 below).
+- The verdict is SEOPress's: good only at every check passed, so 16/17 is
+  needs_improvement. The tool description now says so.
+- A guide whose images SEOPress does not see: SEOPress 10.4 drops every `<img>` that has
+  `width` but no `height` (its "under 1 px" filter compares the missing attribute, '', with
+  1, and in PHP 8 `'' <= 1` is true). It counts as no image for `img_alt` and
+  `content_media`. The fix is in the content: give such images a `height`.
+For an overview without re-analysing, a SEOPress site can list SEOPress's read-only
+`seopress/list-posts-by-content-score` as a site ability. It answers each post's stored
+verdict and checks passed; posts never analysed show not_analyzed.
+
+Before that, 0.11.1 (bridge 0.11.1), 2026-11-20: the first use of `analyze_seopress_content` in
 ChatGPT failed. All five items got SEOPress's "site could not be reached". This was not
 DNS, TLS or a block: WordPress loads its own HTTPS page in 0.5 s. ChatGPT sent three
 analyses in parallel while the owner browsed the site. Each analysis holds three Apache
