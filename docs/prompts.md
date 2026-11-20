@@ -131,6 +131,7 @@ These should end in a clear explanation to the user, not in a retry in another f
 | 7.14 | `WPMCP_LIVE_BUDGET` below the number of items | *Add the guide link to these 40 posts.* | Refused whole, saying how many changes the call needs and how many are left; nothing written |
 | 7.15 | — | *Inspect the page https://example.com/.* | `inspect_page` takes the ID of a published item of this site, never an address; the client says so |
 | 7.16 | SEOPress active | *Run SEOPress's content analysis on draft `<draft-id>`.* | Refused: only published items can be analysed (SEOPress loads the page as a visitor); the client offers to review the SEO fields with `get_content` instead |
+| 7.17 | SEOPress active | *Run SEOPress's content analysis on posts `<post-id>`, `<post-id>` and `<post-id>`.* | One at a time: a call made while another runs is answered Busy; the client analyses the posts one after another and reports each |
 
 The budgets (`WPMCP_WRITE_BUDGET`, 120 writes an hour, and `WPMCP_LIVE_BUDGET`, 30 live
 changes an hour, by default; a bulk call counts each item) can be tested on the local stack

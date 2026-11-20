@@ -14,6 +14,8 @@ MCP_KEY="/etc/letsencrypt/live/${MCP_HOST:-}/privkey.pem"
 # the default for any other name; wpmcp*.conf answer only for MCP_HOST.
 VHOST_HTTP=/etc/apache2/sites-available/wpmcp.conf
 VHOST_HTTPS=/etc/apache2/sites-available/wpmcp-ssl.conf
+# A shorter keep-alive (apache/debian/mcp-keepalive.conf): prefork, five workers.
+KEEPALIVE_CONF=/etc/apache2/conf-available/wpmcp-keepalive.conf
 
 # cert_files <host>: certificate (with its chain) and key of a name, as this server keeps them.
 cert_files() { echo "/etc/letsencrypt/live/$1/fullchain.pem" "/etc/letsencrypt/live/$1/privkey.pem"; }

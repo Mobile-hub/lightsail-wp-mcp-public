@@ -3,7 +3,21 @@
 _Updated 2026-11-20._
 
 ## Current focus
-0.11.0 (bridge 0.11.0): `analyze_seopress_content`, asked for by ChatGPT, which proposed
+0.11.1 (bridge 0.11.1), 2026-11-20: the first use of `analyze_seopress_content` in
+ChatGPT failed. All five items got SEOPress's "site could not be reached". This was not
+DNS, TLS or a block: WordPress loads its own HTTPS page in 0.5 s. ChatGPT sent three
+analyses in parallel while the owner browsed the site. Each analysis holds three Apache
+workers at once (proxy, bridge, SEOPress's page load), out of prefork's 5. SEOPress's
+page loads waited 10 s in the queue and never reached the access log, then its
+local-address fallback waited 3 x 5 s more. The fix:
+- the service runs one analysis at a time and answers a second one "Busy" (not
+  "Refused:", so the model retries one by one);
+- the bridge gives the page load 15 s and turns the fallback off for its call;
+- the error names the page's address.
+The owner also chose `KeepAliveTimeout 2`, which the deploy writes on Debian. Review it
+with them after some real use. More workers would cost about 80 MB each on 1 GB.
+
+Before that, 0.11.0 (bridge 0.11.0): `analyze_seopress_content`, asked for by ChatGPT, which proposed
 the REST route `/seopress/v1/posts/{id}/content-analysis`. That route is not read-only
 (it re-renders the page, stores the analysis and deletes two legacy meta keys) and is
 outside the integration user's REST allowlist, so the bridge runs SEOPress's own ability
@@ -87,7 +101,10 @@ under `/var/www`; it only looked like ".htaccess is not read" because there was 
 a cache plugin wrote one and every permalink and `/wp-json` answered 404 (fixed in
 setup.debian.sh). The same image runs Apache prefork with `MaxRequestWorkers 5`: an
 owner's wp-admin session plus a SEO crawler saturate it, and each MCP call needs two
-workers (the proxy and the bridge request).
+workers (the proxy and the bridge request), a SEOPress analysis three (its page load).
+A WordPress feature that requests the site's own pages, run from a bridge request,
+has to be serialised. Testing it from WP-CLI proves nothing, because WP-CLI holds no
+worker and builds http:// links.
 
 Lessons from real servers: fresh Bitnami images ship an unpatched PHP (8.4.20 in
 November 2026), no python3-venv, and no lego/ACME webroot until bncert-tool runs; a rewrite

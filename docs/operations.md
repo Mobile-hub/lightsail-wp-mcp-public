@@ -114,6 +114,7 @@ access:
 | `/etc/systemd/system/wpmcp.service` | Sandboxed unit: network to loopback only, no access to WordPress files, keys or the database |
 | `/etc/systemd/system/wpmcp-media.socket`, `wpmcp-media@.service` | Image worker: `/run/wpmcp-media.sock` (root:wpmcp 660), one sandboxed process per image, public network only; `wpmcp-media@.service.d/dns.conf` allows the DNS resolver, `hosts.conf` holds the worker's copy of `WPMCP_IMAGE_HOSTS` |
 | Bitnami: `/opt/bitnami/apache/conf/vhosts/mcp-vhost.conf`, `mcp-https-vhost.conf`; Debian: `/etc/apache2/sites-available/wpmcp.conf`, `wpmcp-ssl.conf` | Apache: ACME + redirect on 80, TLS + proxy to the socket on 443 |
+| Debian: `/etc/apache2/conf-available/wpmcp-keepalive.conf` | `KeepAliveTimeout 2` for the whole server: with prefork's five workers, an idle connection holds one |
 | Bitnami: `/opt/bitnami/letsencrypt/certificates/<MCP_HOST>.*` (lego, `/etc/cron.d/wpmcp-cert`); Debian: `/etc/letsencrypt/live/<MCP_HOST>/` (certbot, its systemd timer) | The service's own certificate and its renewal |
 | Debian, from `bin/setup-server`: `/etc/letsencrypt/live/<WP_HOST>/`, `sites-available/wordpress.conf`, `wordpress-ssl.conf` (in place of the image's `000-default`, `default-ssl`), `conf-available/wordpress-permalinks.conf`, `/etc/php/<v>/apache2/conf.d/99-wpmcp.ini`, `/etc/apt/apt.conf.d/20auto-upgrades` | The site's certificate, vhosts, permalink rules, PHP hardening, security updates |
 | Bitnami, from `bin/setup-server`: `99-wpmcp.ini` in the ini directory of the PHP-FPM that Apache proxies to | PHP hardening |
@@ -178,6 +179,18 @@ menus, bulk changes; 0 turns them off; a bulk call counts one per item, a dry ru
 one that would go over is refused whole), `WPMCP_MEDIA_MAX_BYTES` (10 MB per image; Apache allows 11 MB on
 `/upload/`), `WPMCP_UPLOAD_TTL` (900 s). Override them in the site file
 (`WPMCP_WRITE_BUDGET=60`) and deploy.
+
+Web server workers are the other limit. Each MCP call holds two Apache workers while it
+runs: the proxy and the bridge request. `analyze_seopress_content` holds a third,
+because SEOPress loads the page from the site's own address. Lightsail's image runs
+prefork with `MaxRequestWorkers 5` and `KeepAliveTimeout 5`, so a browser on the site
+can hold the rest with idle connections. On Debian, the deploy sets `KeepAliveTimeout 2`
+for the whole server (`conf-available/wpmcp-keepalive.conf`). If the pool is still full,
+calls slow down and the analysis answers "SEOPress could not load the page" (the page load
+gives up after 15 s). The service runs one analysis at a time, and trying again a minute
+later works. Error lines `AH00161` in `/var/log/apache2/error.log` mean the pool was
+full. Apache logs that line only once until it restarts. Each worker takes about 80 MB
+on a 1 GB instance, so more workers need the memory.
 
 ## Images from the web
 

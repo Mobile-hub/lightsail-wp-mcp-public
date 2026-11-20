@@ -141,6 +141,13 @@ step "apache: HTTPS vhost"
 apache_apply "$S/apache/mcp-https.conf" "$VHOST_HTTPS"
 apache_reload   # a renewed certificate with an unchanged vhost
 
+step "apache: keep-alive"
+if [[ -n "$KEEPALIVE_CONF" ]]; then
+  apache_apply "$S/apache/mcp-keepalive.conf" "$KEEPALIVE_CONF"
+else
+  echo "left as the image has it ($PLATFORM)"
+fi
+
 step "checks over loopback"
 probe() { curl -s -o /dev/null -w "%{http_code}" --max-time 10 --resolve "$MCP_HOST:443:127.0.0.1" "$@"; }
 # A graceful reload returns before the new configuration serves: wait for it.

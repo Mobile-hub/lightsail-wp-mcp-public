@@ -68,6 +68,12 @@
   analysis of a published item through its ability; the local stack routes WordPress's
   requests to its own address to Apache so SEOPress can load pages. 518 tests, 99%
   coverage. Deployed the same day.
+- 2026-11-20 — 0.11.1 (bridge 0.11.1): the analysis failed in production. Apache's
+  five prefork workers were full: three parallel analyses need three workers each, and
+  the owner was browsing. Now one analysis runs at a time and a parallel call is
+  answered Busy. SEOPress's page load waits 15 s, its local-address fallback is off
+  for the bridge's call, and the error gives the page's address. On Debian, the deploy
+  sets `KeepAliveTimeout 2`; the owner will review it after some use.
 
 ## Not done
 - Connecting Claude.

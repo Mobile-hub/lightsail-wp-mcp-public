@@ -198,6 +198,8 @@ const WPMCP_BRIDGE_SEOPRESS_ANALYSIS = 'seopress/analyze-post-content';
 // Most serious first. "low" is a suggestion: SEOPress counts it as passed.
 const WPMCP_BRIDGE_SEOPRESS_IMPACTS = array( 'high', 'medium', 'low', 'good' );
 const WPMCP_BRIDGE_FINDING_CHARS    = 400;
+// Seconds SEOPress may wait for the page (its own default is 10). See wpmcp_seopress_analyse().
+const WPMCP_BRIDGE_ANALYSIS_WAIT = 15;
 
 /** The SEO operations: routes of wpmcp/v1 and abilities (see abilities.php). */
 function wpmcp_seo_operations(): array {
@@ -245,7 +247,7 @@ function wpmcp_rest_seo_analysis( WP_REST_Request $request ) {
 		);
 	}
 
-	$data = wp_get_ability( WPMCP_BRIDGE_SEOPRESS_ANALYSIS )->execute( array( 'post_id' => $post->ID ) );
+	$data = wpmcp_seopress_analyse( $post->ID );
 	if ( is_wp_error( $data ) ) {
 		$status = (int) ( $data->get_error_data()['status'] ?? 0 );
 		if ( 429 === $status ) {
@@ -254,11 +256,43 @@ function wpmcp_rest_seo_analysis( WP_REST_Request $request ) {
 		return wpmcp_error( 'wpmcp_seopress_failed', 'SEOPress could not analyse the page: ' . wp_strip_all_tags( $data->get_error_message() ), 409 );
 	}
 	if ( ! is_array( $data ) || ! isset( $data['score'] ) || ! is_array( $data['score'] ) ) {
-		// When the page cannot be loaded, SEOPress answers why in place of the title.
+		// When the page cannot be loaded, SEOPress answers why in place of the title (it does
+		// not say the HTTP status).
 		$why = is_array( $data ) && is_string( $data['title'] ?? null ) ? wp_strip_all_tags( $data['title'] ) : '';
-		return wpmcp_error( 'wpmcp_seopress_failed', trim( 'SEOPress could not load the page as visitors get it. ' . $why ), 409 );
+		return wpmcp_error(
+			'wpmcp_seopress_failed',
+			sprintf(
+				'SEOPress could not load the page as visitors get it (%s). SEOPress says: %s The server loads the page from the site\'s own address while this call waits, and on a busy site that can time out: try again in a minute, one item at a time.',
+				get_permalink( $post ),
+				'' !== $why ? $why : 'nothing.'
+			),
+			409
+		);
 	}
 	return wpmcp_seopress_analysis_summary( $post, $data['score'] );
+}
+
+/**
+ * Runs SEOPress's ability. SEOPress loads the page with a request to the site's own
+ * address, which needs a web server worker while this request holds one (and the MCP
+ * proxy another): on a small pool (Apache prefork, five workers on Lightsail's image) the
+ * page waits for a free one. It gets longer than SEOPress's 10 seconds, and SEOPress's
+ * fallback to local addresses (127.0.0.1, ::1), which waits for the same workers, is
+ * skipped so the answer still comes within the service's timeout. Both only for this call.
+ */
+function wpmcp_seopress_analyse( int $post_id ) {
+	$wait = static function ( $args ) {
+		$args['timeout'] = max( (int) ( $args['timeout'] ?? 0 ), WPMCP_BRIDGE_ANALYSIS_WAIT );
+		return $args;
+	};
+	add_filter( 'seopress_real_preview_remote', $wait, PHP_INT_MAX );
+	add_filter( 'seopress_real_preview_loopback_enabled', '__return_false', PHP_INT_MAX );
+	try {
+		return wp_get_ability( WPMCP_BRIDGE_SEOPRESS_ANALYSIS )->execute( array( 'post_id' => $post_id ) );
+	} finally {
+		remove_filter( 'seopress_real_preview_remote', $wait, PHP_INT_MAX );
+		remove_filter( 'seopress_real_preview_loopback_enabled', '__return_false', PHP_INT_MAX );
+	}
 }
 
 /** The checks that ran, most serious first, as SEOPress counts them (ignored ones apart). */

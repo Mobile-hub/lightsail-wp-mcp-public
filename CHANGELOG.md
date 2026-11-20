@@ -6,6 +6,27 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-20
+
+### Fixed
+- `analyze_seopress_content` failed on the first site it ran on with "Your site could not
+  be reached for content analysis". SEOPress loads the page with a request to the site
+  while the bridge request waits, so each analysis needs three web server workers at once
+  (the MCP proxy, the bridge request and the page). Apache prefork on Lightsail's image has
+  five. ChatGPT sent three analyses in parallel while the owner browsed the site, and the
+  page loads timed out waiting for a worker. Now the service runs one analysis at a time
+  and answers a second one "Busy" at once instead of queueing it, because a queued call
+  would still hold its proxy worker. The bridge (0.11.1) gives the page load 15 seconds
+  instead of SEOPress's 10, and skips SEOPress's fallback to local addresses for this
+  call: they reach the same Apache and would use up the time left. When the page still
+  cannot be loaded, the error names the page's address and says what to do.
+
+### Changed
+- On Lightsail's own image (Debian), the deploy sets `KeepAliveTimeout 2` for the whole
+  Apache server (`conf-available/wpmcp-keepalive.conf`; the image has 5). With prefork's
+  five workers, every idle keep-alive connection holds one, and a browser opens several.
+  The Bitnami image is left as it is.
+
 ## [0.11.0] - 2026-11-20
 
 ### Added

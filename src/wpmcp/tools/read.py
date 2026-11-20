@@ -4,6 +4,7 @@ model to work on, never instructions (see the server instructions)."""
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated, Any, Literal
 
 from mcp.server.fastmcp.exceptions import ToolError
@@ -35,6 +36,11 @@ BODY = "body"
 # Answered before everything else, so they survive a client that drops the tail.
 HEAD = ("id", "version", "status", "being_edited", "content_length")
 PART = ("content_offset", "content_complete", "next_offset")
+# Not "Refused:": the server instructions tell the model not to retry those.
+ANALYSIS_BUSY = (
+    "Busy: another SEOPress analysis is running on this site. Analyse one item at a time: "
+    "call again once it has answered."
+)
 
 
 def register(registry: Registry, wp: WordPressClient) -> None:
@@ -43,6 +49,12 @@ def register(registry: Registry, wp: WordPressClient) -> None:
             return await wp.get(path, params)
         except WordPressError as exc:
             raise ToolError(str(exc)) from exc
+
+    # SEOPress loads the page with a request to the site while the bridge request waits:
+    # three web server workers per analysis (proxy, bridge, page) out of a small pool.
+    # Parallel analyses starve each other's page loads, so a second one is answered at
+    # once instead of queued (a queued call would still hold its proxy worker).
+    analysis = asyncio.Lock()
 
     async def get_site_overview() -> dict[str, Any]:
         """Overview of the site: name, URL, languages (with the default one), how many posts
@@ -174,10 +186,13 @@ def register(registry: Registry, wp: WordPressClient) -> None:
         the `keywords` checked (the focus keyphrase first) and `checks`, failed ones first,
         each with its impact (high, medium, low, good) and SEOPress's finding as plain text.
         Only for published items without a password, and only on a site that runs
-        SEOPress. Changes no content or SEO field; SEOPress keeps the result as the item's
-        score, as its editor does. Use it after SEO changes; inspect_page shows the tags
-        themselves."""
-        return await call(f"/content/{content_id}/seo-analysis")
+        SEOPress. One item at a time: while an analysis runs, another call answers Busy.
+        Changes no content or SEO field; SEOPress keeps the result as the item's score, as
+        its editor does. Use it after SEO changes; inspect_page shows the tags themselves."""
+        if analysis.locked():
+            raise ToolError(ANALYSIS_BUSY)
+        async with analysis:
+            return await call(f"/content/{content_id}/seo-analysis")
 
     for fn, title in (
         (get_site_overview, "Site overview"),

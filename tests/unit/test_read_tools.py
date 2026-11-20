@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
 import pytest
+from mcp.server.fastmcp.exceptions import ToolError
 from starlette.testclient import TestClient
 
 from tests.conftest import BASE, access_token, make_settings, rpc, rpc_result
 from wpmcp.app import create_app
+from wpmcp.tools import Registry
+from wpmcp.tools import read as read_tools
 from wpmcp.wp.client import WordPressClient
 
 READ_TOOLS = {
@@ -242,6 +246,42 @@ def test_seopress_analysis_refusals_reach_the_model(
     result = call(wp_client, token, "analyze_seopress_content", {"content_id": 9})
     assert result["isError"] is True and message in result["content"][0]["text"]
     assert "credentials" not in result["content"][0]["text"]
+
+
+def test_seopress_analyses_run_one_at_a_time():
+    """A second analysis while one runs is answered Busy at once, not queued; the next
+    one after it runs, also after a failed one."""
+
+    async def scenario() -> None:
+        started, release = asyncio.Event(), asyncio.Event()
+        seen: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.url.path)
+            started.set()
+            await release.wait()
+            if request.url.path.endswith("/8/seo-analysis"):
+                return httpx.Response(409, json={"code": "wpmcp_seopress_failed", "message": "x"})
+            return httpx.Response(200, json={"id": 9, "score_summary": {"total": 17}})
+
+        settings = make_settings(wp_url="https://books.example.test", wp_password="pw")
+        wp = WordPressClient(settings, transport=httpx.MockTransport(handler))
+        registry = Registry()
+        read_tools.register(registry, wp)
+        analyze = registry.get("analyze_seopress_content").fn
+        first = asyncio.create_task(analyze(content_id=9))
+        await started.wait()
+        with pytest.raises(ToolError, match="^Busy: .*one item at a time"):
+            await analyze(content_id=10)
+        release.set()
+        assert (await first)["id"] == 9
+        with pytest.raises(ToolError):
+            await analyze(content_id=8)
+        assert (await analyze(content_id=11))["id"] == 9
+        assert [p.rsplit("/", 2)[-2] for p in seen] == ["9", "8", "11"]
+        await wp.aclose()
+
+    asyncio.run(scenario())
 
 
 def test_without_wordpress_only_the_diagnostic_tool_exists(app, client, clock):

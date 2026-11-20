@@ -15,6 +15,9 @@ MCP_KEY="$LE/certificates/${MCP_HOST:-}.key"
 # would answer for every name.
 VHOST_HTTP=/opt/bitnami/apache/conf/vhosts/mcp-vhost.conf
 VHOST_HTTPS=/opt/bitnami/apache/conf/vhosts/mcp-https-vhost.conf
+# Keep-alive left as the image has it: PHP runs in PHP-FPM here, so an idle connection
+# holds no PHP worker (the Debian image's prefork pool is what needed it).
+KEEPALIVE_CONF=
 # Apache's PHP handler: the FPM socket it proxies to is the PHP that serves the site.
 FPM_PROXY_CONF=/opt/bitnami/apache/conf/bitnami/php-fpm.conf
 
