@@ -14,8 +14,10 @@ local-address fallback waited 3 x 5 s more. The fix:
   "Refused:", so the model retries one by one);
 - the bridge gives the page load 15 s and turns the fallback off for its call;
 - the error names the page's address.
-The owner also chose `KeepAliveTimeout 2`, which the deploy writes on Debian. Review it
-with them after some real use. More workers would cost about 80 MB each on 1 GB.
+The owner also chose `KeepAliveTimeout 2`, which the deploy writes on Debian. Deployed on
+2026-11-20: bridge 0.11.1, and an idle connection now closes after 2.3 s (measured).
+Review the setting with the owner after some real use: analyses from ChatGPT, `AH00161`
+in Apache's error.log. More workers would cost about 80 MB each on 1 GB.
 
 Before that, 0.11.0 (bridge 0.11.0): `analyze_seopress_content`, asked for by ChatGPT, which proposed
 the REST route `/seopress/v1/posts/{id}/content-analysis`. That route is not read-only

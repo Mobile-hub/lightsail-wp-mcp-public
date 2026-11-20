@@ -73,7 +73,8 @@
   the owner was browsing. Now one analysis runs at a time and a parallel call is
   answered Busy. SEOPress's page load waits 15 s, its local-address fallback is off
   for the bridge's call, and the error gives the page's address. On Debian, the deploy
-  sets `KeepAliveTimeout 2`; the owner will review it after some use.
+  sets `KeepAliveTimeout 2`; the owner will review it after some use. Deployed the same
+  day.
 
 ## Not done
 - Connecting Claude.
